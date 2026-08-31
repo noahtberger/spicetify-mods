@@ -117,37 +117,51 @@
   // --- The menu --------------------------------------------------------------
   function openMenu() {
     const wrap = document.createElement("div");
-    wrap.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;padding:4px 0;";
 
-    const mkBtn = (text, onClick) => {
+    const opt = (text, onClick, extraClass) => {
       const b = document.createElement("button");
+      b.className = "sleep-timer-opt" + (extraClass ? ` ${extraClass}` : "");
       b.textContent = text;
-      b.style.cssText =
-        "padding:8px 14px;border-radius:20px;border:1px solid var(--spice-button,#1ed760);" +
-        "background:transparent;color:var(--spice-text,#fff);cursor:pointer;font-size:14px;";
       b.onclick = () => { onClick(); Spicetify.PopupModal.hide(); };
       return b;
     };
 
+    // Cancel goes first and full-width -- if a timer is running, that's the
+    // reason you opened this, so it shouldn't be hidden among the presets.
     if (deadline) {
-      wrap.appendChild(mkBtn(`Cancel (${formatLeft()} left)`, () => stop()));
+      wrap.appendChild(
+        opt(`Cancel — ${formatLeft()} left`, () => stop(), "sleep-timer-cancel")
+      );
     }
-    PRESETS.forEach((p) => wrap.appendChild(mkBtn(p.label, () => start(p.minutes))));
-    wrap.appendChild(mkBtn("End of track", stopAfterTrack));
+
+    const grid = document.createElement("div");
+    grid.className = "sleep-timer-grid";
+    PRESETS.forEach((p) => grid.appendChild(opt(p.label, () => start(p.minutes))));
+    grid.appendChild(opt("End of track", stopAfterTrack));
+    wrap.appendChild(grid);
+
+    const row = document.createElement("div");
+    row.className = "sleep-timer-custom-row";
 
     const custom = document.createElement("input");
+    custom.className = "sleep-timer-input";
     custom.type = "number";
     custom.min = "1";
-    custom.placeholder = "Custom (min)";
-    custom.style.cssText =
-      "padding:8px 12px;border-radius:20px;border:1px solid var(--spice-misc,#555);" +
-      "background:transparent;color:var(--spice-text,#fff);width:130px;font-size:14px;";
-    custom.onkeydown = (e) => {
-      if (e.key !== "Enter") return;
+    custom.placeholder = "Custom minutes";
+
+    const commit = () => {
       const v = parseInt(custom.value, 10);
       if (v > 0) { start(v); Spicetify.PopupModal.hide(); }
     };
-    wrap.appendChild(custom);
+    custom.onkeydown = (e) => { if (e.key === "Enter") commit(); };
+
+    const setBtn = document.createElement("button");
+    setBtn.className = "sleep-timer-opt";
+    setBtn.textContent = "Set";
+    setBtn.onclick = commit;
+
+    row.append(custom, setBtn);
+    wrap.appendChild(row);
 
     Spicetify.PopupModal.display({ title: "Sleep timer", content: wrap });
   }
@@ -169,21 +183,114 @@
   // Scoped by the modal's aria-label, which Spicetify sets from the title.
   // The modal markup is shared with Spotify's own dialogs, so an unscoped
   // rule here would move the close button in those too.
+  // Scoped by the modal's aria-label, which Spicetify sets from the title.
+  // This markup is shared with Spotify's own dialogs (it reuses the track
+  // credits modal), so unscoped rules here would restyle those too.
+  const M = '.GenericModal[aria-label="Sleep timer"]';
   const css = document.createElement("style");
   css.textContent = `
-    /* Inline SVG sits on the text baseline, which lifts it above the
-       neighbouring icons. Block layout takes it off the baseline. */
+    /* --- playbar button ------------------------------------------------ */
+    /* Inline SVG sits on the text baseline, which lifts it above its
+       neighbours. Block layout takes it off the baseline. */
     .sleep-timer-btn { display: flex; align-items: center; justify-content: center; }
     .sleep-timer-btn svg { display: block; }
 
-    .GenericModal[aria-label="Sleep timer"] .main-trackCreditsModal-header {
+    /* --- modal shell --------------------------------------------------- */
+    ${M} { width: min(460px, 92vw); }
+    ${M} .main-trackCreditsModal-container { padding: 0; border-radius: 12px; }
+
+    ${M} .main-trackCreditsModal-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 16px;
+      padding: 20px 24px 10px;
+      margin: 0;
     }
-    .GenericModal[aria-label="Sleep timer"] .main-trackCreditsModal-closeBtn {
-      margin-left: auto;
+    ${M} .main-trackCreditsModal-header h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+
+    /* The close button ships with no explicit box, so its hover circle sat
+       off-centre from the X. Fixed square + centred flex makes them agree. */
+    ${M} .main-trackCreditsModal-closeBtn {
+      flex: 0 0 32px;
+      width: 32px;
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--spice-subtext, #b3b3b3);
+      cursor: pointer;
+      transition: background-color 120ms ease, color 120ms ease;
+    }
+    ${M} .main-trackCreditsModal-closeBtn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--spice-text, #fff);
+    }
+    ${M} .main-trackCreditsModal-closeBtn svg { display: block; width: 14px; height: 14px; }
+
+    ${M} .main-trackCreditsModal-mainSection { padding: 0; }
+    ${M} .main-trackCreditsModal-originalCredits { padding: 6px 24px 24px; }
+
+    /* --- modal contents ------------------------------------------------ */
+    .sleep-timer-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    .sleep-timer-opt {
+      padding: 11px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--spice-misc, #555);
+      background: transparent;
+      color: var(--spice-text, #fff);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: border-color 120ms ease, background-color 120ms ease, transform 100ms ease;
+    }
+    .sleep-timer-opt:hover {
+      border-color: var(--spice-button, #1ed760);
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .sleep-timer-opt:active { transform: scale(0.97); }
+
+    .sleep-timer-cancel {
+      width: 100%;
+      margin-bottom: 14px;
+      border-color: var(--spice-notification-error, #cf4a3c);
+      color: var(--spice-notification-error, #cf4a3c);
+    }
+    .sleep-timer-cancel:hover {
+      border-color: var(--spice-notification-error, #cf4a3c);
+      background: rgba(207, 74, 60, 0.12);
+    }
+
+    .sleep-timer-custom-row { display: flex; gap: 10px; margin-top: 14px; }
+    .sleep-timer-input {
+      flex: 1;
+      min-width: 0;
+      padding: 11px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--spice-misc, #555);
+      background: transparent;
+      color: var(--spice-text, #fff);
+      font-size: 14px;
+    }
+    .sleep-timer-input::placeholder { color: var(--spice-subtext, #a0a0a0); }
+    .sleep-timer-input:focus {
+      outline: none;
+      border-color: var(--spice-button, #1ed760);
     }
   `;
   document.head.appendChild(css);
