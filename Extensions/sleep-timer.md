@@ -4,13 +4,15 @@ Desktop Spotify has no sleep timer; mobile does. This adds one.
 
 ## Using it
 
-Click the **clock icon** in the topbar. You get:
+Click the **clock icon** in the now-playing bar, bottom right — next to the
+queue and device buttons. You get:
 
 - Presets: 15 / 30 / 45 / 60 / 90 minutes
 - A custom minutes field — type a number and press Enter
 - **End of track** — waits for the current song to finish instead of cutting it off
 
-While armed, the button turns accent-coloured and shows the countdown
+While armed, the button shows Spotify's active-state dot — the same indicator
+that appears under shuffle and repeat — and the tooltip shows the countdown
 (`Sleep: 23m`). Click it again to cancel.
 
 ## Behaviour

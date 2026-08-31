@@ -1,8 +1,9 @@
 // ============================================================================
 // sleep-timer.js — pause Spotify after a set time
 // ----------------------------------------------------------------------------
-// Desktop Spotify has no sleep timer; mobile does. This adds one as a topbar
-// button. Presets, a custom duration, and a gentle volume fade before it stops.
+// Desktop Spotify has no sleep timer; mobile does. This adds one to the right
+// side of the now-playing bar, next to queue and devices. Presets, a custom
+// duration, and a gentle volume fade before it stops.
 //
 // The wrapper below polls until Spicetify exists. Extensions are injected
 // before the client finishes booting, so touching Spicetify.Player at load
@@ -10,7 +11,7 @@
 // ============================================================================
 
 (function sleepTimer() {
-  if (!(Spicetify?.Player && Spicetify?.Topbar && Spicetify?.showNotification)) {
+  if (!(Spicetify?.Player && Spicetify?.Playbar && Spicetify?.PopupModal && Spicetify?.showNotification)) {
     setTimeout(sleepTimer, 300);
     return;
   }
@@ -29,8 +30,10 @@
   function updateButton() {
     if (!button) return;
     button.label = deadline ? `Sleep: ${minutesLeft()}m` : "Sleep timer";
-    // Spotify's own accent marks it as armed without needing custom CSS.
-    button.element.style.color = deadline ? "var(--spice-button, #1ed760)" : "";
+    // Playbar buttons have a built-in active state -- it adds the same dot
+    // indicator Spotify puts under shuffle and repeat. Using theirs means it
+    // matches the client automatically instead of drifting from it.
+    button.active = !!deadline;
   }
 
   // --- Fade + stop -----------------------------------------------------------
@@ -135,7 +138,9 @@
     Spicetify.PopupModal.display({ title: "Sleep timer", content: wrap });
   }
 
-  button = new Spicetify.Topbar.Button("Sleep timer", "clock", openMenu);
+  // Playbar.Button is the right-hand controls cluster (queue, devices,
+  // volume). Playbar.Widget would put it on the left by the track name.
+  button = new Spicetify.Playbar.Button("Sleep timer", "clock", openMenu);
   updateButton();
   console.log("[sleep-timer] loaded");
 })();
