@@ -3,11 +3,19 @@
     "name": "Hide Announcements",
     "description": "Hides Spotify's promos, upsells and banners — and tells you when it does. Includes a self-test so you can verify it works, and a log of everything it has caught.",
     "main": "Extensions/hide-announcements.js",
-    "readme": "README.md",
+    "readme": "Extensions/hide-announcements.md",
     "branch": "main",
     "authors": [
-      { "name": "noahtberger", "url": "https://github.com/noahtberger" }
+      {
+        "name": "noahtberger",
+        "url": "https://github.com/noahtberger"
+      }
     ],
-    "tags": ["hide", "clean", "ui", "banners"]
+    "tags": [
+      "hide",
+      "clean",
+      "ui",
+      "banners"
+    ]
   }
 ]
