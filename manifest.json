@@ -17,5 +17,23 @@
       "ui",
       "banners"
     ]
+  },
+  {
+    "name": "Sleep Timer",
+    "description": "Pause Spotify after a set time. Presets up to 2 hours, a custom duration, and an end-of-track option. Fades the volume down before pausing and restores it afterwards.",
+    "main": "Extensions/sleep-timer.js",
+    "readme": "Extensions/sleep-timer.md",
+    "branch": "main",
+    "authors": [
+      {
+        "name": "noahtberger",
+        "url": "https://github.com/noahtberger"
+      }
+    ],
+    "tags": [
+      "sleep",
+      "timer",
+      "playback"
+    ]
   }
 ]
