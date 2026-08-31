@@ -34,6 +34,7 @@
       "sleep",
       "timer",
       "playback"
-    ]
+    ],
+    "preview": "preview-sleep-timer.png"
   }
 ]
