@@ -76,6 +76,7 @@ window.__betterMixExtensionLoaded = true;
   try {
 
   const P = () => Spicetify.Platform;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let logLine = () => {};
 
   const SET_KEY = "better-mix:settings";
