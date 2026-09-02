@@ -155,6 +155,32 @@
     logLine("gathering what you already listen to…");
     const known = await knownStuff(sourceUri);
 
+    const source = (await playlistTracks(sourceUri).catch(() => [])).filter((t) => t?.uri).map(normalize);
+    logLine(`source: ${source.length} tracks — e.g. ${source.slice(0, 3).map((t) => `${t.name} — ${(t.artists || []).map((a) => a.name).join(", ")}`).join("  ·  ")}`);
+
+    // Script-based theme guard. Some of Spotify's mixes are defined by language
+    // as much as genre -- J-Pop, K-Pop, música mexicana. If most of the source
+    // is written in one non-Latin script, a candidate with none of that script
+    // anywhere in its title, artist or album is almost certainly an outlier
+    // that leaked in from your history, and gets dropped.
+    const SCRIPTS = {
+      Japanese: /[\u3040-\u30ff\u4e00-\u9fff]/, Korean: /[\uac00-\ud7af\u1100-\u11ff]/,
+      Cyrillic: /[\u0400-\u04ff]/, Arabic: /[\u0600-\u06ff]/, Thai: /[\u0e00-\u0e7f]/,
+      Hebrew: /[\u0590-\u05ff]/, Greek: /[\u0370-\u03ff]/, Devanagari: /[\u0900-\u097f]/,
+    };
+    const textOf = (t) => [t?.name, t?.album?.name, ...(t?.artists || []).map((a) => a?.name)].filter(Boolean).join(" ");
+    let theme = null;
+    if (source.length >= 5) {
+      for (const [name, re] of Object.entries(SCRIPTS)) {
+        const share = source.filter((t) => re.test(textOf(t))).length / source.length;
+        if (share >= 0.6) { theme = { name, re, share }; break; }
+      }
+    }
+    if (theme) logLine(`theme: ${theme.name} script in ${Math.round(theme.share * 100)}% of the source — candidates without it are dropped`);
+    const offTheme = (t) => !!theme && !theme.re.test(textOf(t));
+    const artistKeys = (t) => (t?.artists || []).flatMap((a) => [a?.uri, a?.id, a?.name]).filter(Boolean);
+    const sourceArtists = new Set(source.flatMap(artistKeys));
+
     logLine("asking Spotify what fits this playlist…");
     const candidates = await recommend(sourceUri, Math.max(150, total * 6));
     if (!candidates.length) throw new Error("The recommender returned nothing for this playlist.");
@@ -162,19 +188,21 @@
     // The step Spotify won't do: drop anything you already play.
     const perArtist = new Map();
     const fresh = [];
-    let cutTrack = 0, cutArtist = 0, cutCap = 0;
+    let cutTrack = 0, cutArtist = 0, cutCap = 0, cutTheme = 0;
 
     for (const t of candidates.sort((a, b) => (b.popularity || 0) - (a.popularity || 0))) {
       if (known.tracks.has(t.uri)) { cutTrack++; continue; }
       if ((t.artists || []).some((a) => known.artists.has(a.uri || a.id))) { cutArtist++; continue; }
+      if (offTheme(t)) { cutTheme++; continue; }
 
       const key = t.artists?.[0]?.uri ?? "?";
       if ((perArtist.get(key) || 0) >= maxPerArtist) { cutCap++; continue; }
       perArtist.set(key, (perArtist.get(key) || 0) + 1);
+      t.why = "new";
       fresh.push(t);
     }
 
-    logLine(`filtered: -${cutTrack} already played, -${cutArtist} your artists, -${cutCap} artist cap`);
+    logLine(`filtered: -${cutTrack} already played, -${cutArtist} your artists, -${cutCap} artist cap` + (theme ? `, -${cutTheme} off-script` : ""));
     logLine(`${fresh.length} genuinely new tracks left`);
     if (!fresh.length) throw new Error("Nothing survived the filter — try a different playlist.");
 
@@ -192,21 +220,25 @@
       // stage 1: more songs from the new artists we already found
       for (const t of pool) {
         if (fresh.length >= total) break;
-        if ((t.artists || []).some((a) => known.artists.has(a.uri || a.id))) continue;
+        if (offTheme(t) || (t.artists || []).some((a) => known.artists.has(a.uri || a.id))) continue;
         const key = t.artists?.[0]?.uri ?? "?";
         if ((perArtist.get(key) || 0) >= maxPerArtist + 2) continue;
         perArtist.set(key, (perArtist.get(key) || 0) + 1);
+        t.why = "top-up:new-artist";
         have.add(t.uri); fresh.push(t); capUp++;
       }
-      // stage 2: songs you haven't played, by artists you do play
+      // stage 2: songs you haven't played, by artists Spotify put in THIS mix.
+      // Not "any artist you know" -- that's precisely how rap got into J-Pop.
       for (const t of pool) {
         if (fresh.length >= total) break;
-        if (have.has(t.uri)) continue;
+        if (have.has(t.uri) || offTheme(t)) continue;
+        if (!artistKeys(t).some((k) => sourceArtists.has(k))) continue;
+        t.why = "top-up:mix-artist";
         have.add(t.uri); fresh.push(t); knownUp++;
       }
 
       if (capUp || knownUp)
-        logLine(`strict pass gave ${strict} — topped up: +${capUp} more from the new artists, +${knownUp} unheard songs by artists you know`);
+        logLine(`strict pass gave ${strict} — topped up: +${capUp} more from the new artists, +${knownUp} unheard songs by this mix's own artists`);
       if (fresh.length < total)
         logLine(`still short at ${fresh.length}: the recommender only offered ${candidates.length} candidates for this one`);
     }
@@ -216,13 +248,13 @@
     // Spotify's mixes carry a few outliers from your history (a rap track in
     // the J-Pop Mix), and without genre data the recommender's artist set is
     // the best signal there is for what actually fits.
-    const source = (await playlistTracks(sourceUri).catch(() => [])).filter((t) => t?.uri).map(normalize);
-    const onTheme = new Set(candidates.flatMap((t) => (t.artists || []).map((a) => a.uri || a.id)));
-    let familiarPool = source.filter((t) => (t.artists || []).some((a) => onTheme.has(a.uri || a.id)));
-    if (familiarPool.length < familiarCount) familiarPool = source;   // too strict for this one -- fall back
+    const onTheme = new Set(candidates.flatMap(artistKeys));
+    const familiarPool = source.filter((t) => !offTheme(t) && artistKeys(t).some((k) => onTheme.has(k)));
     const familiar = shuffle(familiarPool).slice(0, familiarCount);
-    if (familiar.length)
-      logLine(`familiar: ${familiar.map((t) => `${t.name} — ${(t.artists || []).map((a) => a.name).join(", ")}`).join("  ·  ")}`);
+    familiar.forEach((t) => { t.why = "familiar"; });
+    logLine(familiar.length
+      ? `familiar (${familiarPool.length} eligible): ${familiar.map((t) => `${t.name} — ${(t.artists || []).map((a) => a.name).join(", ")}`).join("  ·  ")}`
+      : "familiar: none of this mix's tracks are on-theme by the recommender's artists — none added");
     const out = fresh.slice(0, Math.max(0, total - familiar.length));
     familiar.forEach((t, i) =>
       out.splice(Math.floor(((i + 1) * out.length) / (familiar.length + 1)), 0, t)
@@ -290,6 +322,7 @@
     album: { name: t.album?.name || "", uri: t.album?.uri || null },
     image: t.album?.imageUrl || t.album?.largeImageUrl || null,
     popularity: t.popularity ?? null,
+    why: t.why || null,       // which rule let it in -- so a bad pick is traceable
   });
 
   // Play a virtual mix: first track directly, the rest queued behind it.
@@ -333,7 +366,9 @@
         };
         if (prev) Object.assign(prev, entry); else store.push(entry);
         writeVirtual(store);                       // the row updates after each one
-        logLine(`built "${name}" (${tracks.length} tracks)`);
+        const byWhy = {};
+        tracks.forEach((t) => { byWhy[t.why || "?"] = (byWhy[t.why || "?"] || 0) + 1; });
+        logLine(`built "${name}" (${tracks.length} tracks): ` + Object.entries(byWhy).map(([k, v]) => `${v} ${k}`).join(", "));
         done.push(name);
       } catch (e) {
         const where = e?.requestUrl ? ` at ${String(e.requestUrl).split("/").slice(-2).join("/")}` : "";
@@ -439,7 +474,7 @@
         });
         logLine("");
         tracks.forEach((t, i) =>
-          logLine(`${String(i + 1).padStart(2)}. ${t.name} — ${(t.artists || []).map((a) => a.name).join(", ")}${t.popularity ? `  (${t.popularity})` : ""}`)
+          logLine(`${String(i + 1).padStart(2)}. ${t.name} — ${(t.artists || []).map((a) => a.name).join(", ")}${t.popularity ? `  (${t.popularity})` : ""}${t.why ? `  [${t.why}]` : ""}`)
         );
         if (create) {
           const name = "Better Mix — " + (lists.find((p) => p.uri === val("#bmx-src"))?.name || "mix");
