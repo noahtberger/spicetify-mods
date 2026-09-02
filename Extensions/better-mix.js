@@ -169,14 +169,17 @@
       Hebrew: /[\u0590-\u05ff]/, Greek: /[\u0370-\u03ff]/, Devanagari: /[\u0900-\u097f]/,
     };
     const textOf = (t) => [t?.name, t?.album?.name, ...(t?.artists || []).map((a) => a?.name)].filter(Boolean).join(" ");
-    let theme = null;
+    let theme = null, topShare = 0, topName = "";
     if (source.length >= 5) {
       for (const [name, re] of Object.entries(SCRIPTS)) {
         const share = source.filter((t) => re.test(textOf(t))).length / source.length;
-        if (share >= 0.6) { theme = { name, re, share }; break; }
+        if (share > topShare) { topShare = share; topName = name; }
+        if (share >= 0.5 && !theme) theme = { name, re, share };
       }
     }
-    if (theme) logLine(`theme: ${theme.name} script in ${Math.round(theme.share * 100)}% of the source — candidates without it are dropped`);
+    logLine(theme
+      ? `theme: ${theme.name} script in ${Math.round(theme.share * 100)}% of the source — candidates without it are dropped`
+      : `theme: none${topName ? ` (largest non-Latin script share: ${topName} ${Math.round(topShare * 100)}%)` : ""}`);
     const offTheme = (t) => !!theme && !theme.re.test(textOf(t));
     const artistKeys = (t) => (t?.artists || []).flatMap((a) => [a?.uri, a?.id, a?.name]).filter(Boolean);
     const sourceArtists = new Set(source.flatMap(artistKeys));
@@ -405,10 +408,27 @@
     return done;
   }
 
+  // "Rebuild all": the mixes on your Home page first, then everything else
+  // recorded. Previously this took the first N ever recorded, which usually
+  // didn't include the one you were looking at.
   async function rebuildAll({ limit, ...opts }) {
-    const mixes = spotifyMixes().slice(0, limit);
+    const cur = readCurrent();
+    const pool = [...cur, ...spotifyMixes().filter((m) => !cur.some((c) => c.uri === m.uri))];
+    const mixes = pool.slice(0, limit);
     if (!mixes.length) throw new Error("No Spotify mixes recorded yet — open Home once so home-mixes can see them.");
     return rebuildThese(mixes, opts);
+  }
+
+  // Rebuild exactly one mix, by its Spotify source. The mix page's button.
+  async function rebuildOne(sourceUri) {
+    const m = readCurrent().find((x) => x.uri === sourceUri)
+      || spotifyMixes().find((x) => x.uri === sourceUri)
+      || readVirtual().filter((x) => x.sourceUri === sourceUri).map((x) => ({ uri: x.sourceUri, name: x.sourceName }))[0];
+    if (!m) throw new Error("That mix's Spotify source isn't recorded");
+    const prevLog = logLine;
+    logLine = (t) => console.log("[better-mix]", t);
+    try { return await rebuildThese([m], settings()); }
+    finally { logLine = prevLog; }
   }
 
   // --- Automatic ---------------------------------------------------------------
@@ -581,7 +601,7 @@
   }
 
   // Shared surface for home-mixes.js (and for poking at from the console).
-  window.BetterMix = { ready: true, open: () => openMenu(), rebuildAll, saveVirtual, play, virtual: readVirtual };
+  window.BetterMix = { ready: true, open: () => openMenu(), rebuildAll, rebuildOne, saveVirtual, play, virtual: readVirtual };
 
   console.log(`[better-mix] loaded — ${readVirtual().length} mixes in store`);
   } catch (e) {

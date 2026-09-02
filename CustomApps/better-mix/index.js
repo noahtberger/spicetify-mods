@@ -36,6 +36,13 @@ const fmtTotal = (ms) => {
   const m = Math.round(ms / 60000);
   return m >= 60 ? `${Math.floor(m / 60)} hr ${m % 60} min` : `${m} min`;
 };
+const ago = (iso) => {
+  const t = Date.parse(iso || ""); if (!t) return "";
+  const m = Math.round((Date.now() - t) / 60000);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60); if (h < 48) return `${h} h ago`;
+  return `${Math.round(h / 24)} days ago`;
+};
 const icon = (name, cls = "bmx-svg") =>
   h("span", { className: cls, dangerouslySetInnerHTML: { __html: `<svg viewBox="0 0 16 16" fill="currentColor">${Spicetify.SVGIcons[name] || ""}</svg>` } });
 
@@ -95,6 +102,15 @@ function MixPage({ mix }) {
   const tracks = mix.tracks || [];
   const total = tracks.reduce((a, t) => a + (Number(t.duration) || 0), 0);
   const [busy, setBusy] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
+
+  const rebuild = async () => {
+    if (!BM?.rebuildOne) return Spicetify.showNotification("Better Mix isn't loaded", true);
+    setRebuilding(true);
+    try { await BM.rebuildOne(mix.sourceUri); Spicetify.showNotification(`Rebuilt ${mix.name}`); }
+    catch (e) { Spicetify.showNotification("Rebuild failed: " + (e?.message || e), true); }
+    finally { setRebuilding(false); }
+  };
 
   const play = (i = 0) =>
     BM?.play ? BM.play(mix, i) : Spicetify.showNotification("Better Mix isn't loaded", true);
@@ -121,19 +137,20 @@ function MixPage({ mix }) {
         h("h1", { className: "bmx-title" }, mix.name),
         h("p", { className: "bmx-desc" }, `Popular songs that fit ${mix.sourceName || "this mix"}, by artists you don't already play.`),
         h("div", { className: "bmx-stats" },
-          h("b", null, "You"), ` • ${tracks.length} songs${total ? `, ${fmtTotal(total)}` : ""}`))),
+          h("b", null, "You"), ` • ${tracks.length} songs${total ? `, ${fmtTotal(total)}` : ""}${mix.builtAt ? ` • built ${ago(mix.builtAt)}` : ""}`))),
 
     h("div", { className: "bmx-actions" },
       h("button", { className: "bmx-playbtn", title: "Play", onClick: () => play(0) }, icon("play")),
       h("button", { className: "bmx-pill", disabled: busy, onClick: save }, mix.savedUri ? "Open playlist" : "Save as playlist"),
-      h("button", { className: "bmx-textbtn", onClick: () => BM?.open?.() }, "Rebuild")),
+      h("button", { className: "bmx-textbtn", disabled: rebuilding, onClick: rebuild }, rebuilding ? "Rebuilding…" : "Rebuild this mix"),
+      h("button", { className: "bmx-textbtn", onClick: () => BM?.open?.() }, "Settings")),
 
     h("div", { className: "bmx-table" },
       h("div", { className: "bmx-thead" },
         h("span", null, "#"), h("span", null, "Title"), h("span", null, "Album"), icon("clock", "bmx-svg bmx-clock")),
       tracks.map((t, i) =>
         h("div", { className: "bmx-tr", key: t.uri || i, onClick: () => play(i), title: "Play from here" },
-          h("span", { className: "bmx-num" },
+          h("span", { className: "bmx-num", title: t.why ? `admitted as: ${t.why}` : "" },
             h("span", { className: "bmx-idx" }, i + 1),
             icon("play", "bmx-svg bmx-rowplay")),
           h("span", { className: "bmx-titlecell" },
