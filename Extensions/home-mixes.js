@@ -141,8 +141,13 @@
     try { Spicetify.LocalStorage.set(SRC_KEY, JSON.stringify([...byUri.values()])); } catch {}
   }
 
+  // Filtered through the current rule, so entries recorded by older versions
+  // (genre links, your own playlists) can't leak back in.
   function readSources() {
-    try { return JSON.parse(Spicetify.LocalStorage.get(SRC_KEY)) || []; } catch { return []; }
+    try {
+      return (JSON.parse(Spicetify.LocalStorage.get(SRC_KEY)) || [])
+        .filter((x) => isMix(x?.name || "", String(x?.uri).split(":").pop()));
+    } catch { return []; }
   }
 
   function unhideAll() {
@@ -208,6 +213,9 @@
     scheduled = true;
     idle(() => { scheduled = false; scan(); injectRow(); });
   }
+
+  // Purge stale entries once on startup so storage matches the current rule.
+  try { Spicetify.LocalStorage.set(SRC_KEY, JSON.stringify(readSources())); } catch {}
 
   new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
   schedule();

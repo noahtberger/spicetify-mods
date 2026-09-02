@@ -29,8 +29,9 @@
 
   // home-mixes.js records the Spotify mix shelves it hides. Reading them from
   // storage means this works anywhere, not just while Home is on screen.
+  const isMix = (x) => /^37i9dQZF1E/.test(String(x?.uri).split(":").pop()) && /\bmix\b/i.test(x?.name || "");
   const spotifyMixes = () => {
-    try { return JSON.parse(Spicetify.LocalStorage.get("home-mixes:sources")) || []; }
+    try { return (JSON.parse(Spicetify.LocalStorage.get("home-mixes:sources")) || []).filter(isMix); }
     catch { return []; }
   };
 
@@ -45,19 +46,28 @@
     return c?.items || [];
   }
 
-  // The extender pages. Ask in chunks until it stops giving us new ones.
+  // The extender does NOT page -- any offset above 0 comes back 400, which
+  // is what was killing every mix. It may hand back a different set on each
+  // call though, so ask repeatedly at offset 0 and dedupe, stopping the
+  // moment a call adds nothing new.
   async function recommend(uri, want) {
     const out = [];
     const seen = new Set();
-    for (let off = 0; out.length < want && off < 400; off += 50) {
-      const batch = await P().PlaylistAPI.getRecommendedTracks(uri, off, 50);
-      if (!batch?.length) break;
+    let limit = Math.min(100, Math.max(50, want));
+    for (let call = 0; call < 5 && out.length < want; call++) {
+      let batch;
+      try {
+        batch = await P().PlaylistAPI.getRecommendedTracks(uri, 0, limit);
+      } catch (e) {
+        if (limit > 50) { limit = 50; call--; continue; }   // 100 refused: retry once at 50
+        throw new Error(`recommender refused this playlist (HTTP ${e?.status ?? "?"})`);
+      }
       let added = 0;
-      for (const t of batch) {
+      for (const t of batch || []) {
         if (t?.uri && !seen.has(t.uri)) { seen.add(t.uri); out.push(t); added++; }
       }
       logLine(`  +${added} candidates (${out.length} total)`);
-      if (added === 0) break;          // extender has run dry
+      if (added === 0) break;
     }
     return out;
   }
@@ -182,8 +192,9 @@
         logLine(`saved "${name}" (${tracks.length} tracks)`);
         done.push(name);
       } catch (e) {
-        // One dud mix shouldn't abandon the rest of the run.
-        logLine(`skipped — ${e?.message || e}`);
+        // One dud mix shouldn't abandon the rest of the run -- but say why.
+        const where = e?.requestUrl ? ` at ${String(e.requestUrl).split("/").slice(-2).join("/")}` : "";
+        logLine(`skipped — ${e?.message || e?.name || e}${e?.status ? ` (HTTP ${e.status})` : ""}${where}`);
       }
     }
     return done;
