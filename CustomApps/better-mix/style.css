@@ -42,6 +42,7 @@
 .bmx-iconbtn:hover:not(:disabled) { color: var(--spice-text, #fff); transform: scale(1.06); }
 .bmx-iconbtn:disabled { opacity: .5; cursor: default; }
 /* Spotify marks an active toggle with the accent colour and a dot beneath. */
+.bmx-iconbtn .bmx-vb16 svg { width: .87em; height: .87em; }
 .bmx-iconbtn.bmx-on { color: var(--spice-button, #1ed760); position: relative; }
 .bmx-iconbtn.bmx-on::after { content: ""; position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%);
                              width: 4px; height: 4px; border-radius: 50%; background: currentColor; }

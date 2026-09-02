@@ -47,18 +47,27 @@ const ago = (iso) => {
 // viewBox and artwork as their controls, so these render at identical weight
 // instead of being 16px glyphs scaled up (which fattened every stroke).
 const ICONS = {
-  play:  '<path d="m7.05 3.606 13.49 7.788a.7.7 0 0 1 0 1.212L7.05 20.394A.7.7 0 0 1 6 19.788V4.212a.7.7 0 0 1 1.05-.606"/>',
+  play:  { vb: 24, p: '<path d="m7.05 3.606 13.49 7.788a.7.7 0 0 1 0 1.212L7.05 20.394A.7.7 0 0 1 6 19.788V4.212a.7.7 0 0 1 1.05-.606"/>' },
   // Spotify's download ring, reused as the circle for save / saved.
-  ring:  '<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M1 12C1 5.925 5.925 1 12 1s11 4.925 11 11-4.925 11-11 11S1 18.075 1 12"/>',
-  plus:  '<path d="M11 7h2v4h4v2h-4v4h-2v-4H7v-2h4z"/>',
-  check: '<path d="m10.9 16.2-3.6-3.6 1.4-1.4 2.2 2.2 4.4-4.4 1.4 1.4z"/>',
-  shuffle: '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="m15 15 6 6"/><path d="m4 4 5 5"/></g>',
-  more:  '<path d="M4.5 13.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m15 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m-7.5 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3"/>',
+  ring:  { vb: 24, p: '<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M1 12C1 5.925 5.925 1 12 1s11 4.925 11 11-4.925 11-11 11S1 18.075 1 12"/>' },
+  plus:  { vb: 24, p: '<path d="M11 7h2v4h4v2h-4v4h-2v-4H7v-2h4z"/>' },
+  check: { vb: 24, p: '<path d="m10.9 16.2-3.6-3.6 1.4-1.4 2.2 2.2 4.4-4.4 1.4 1.4z"/>' },
+  more:  { vb: 24, p: '<path d="M4.5 13.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m15 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m-7.5 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3"/>' },
+  // Spotify's own shuffle, from the player bar -- their 16px set.
+  shuffle: { vb: 16, p: '<path d="M13.151.922a.75.75 0 1 0-1.06 1.06L13.109 3H11.16a3.75 3.75 0 0 0-2.873 1.34l-6.173 7.356A2.25 2.25 0 0 1 .39 12.5H0V14h.391a3.75 3.75 0 0 0 2.873-1.34l6.173-7.356a2.25 2.25 0 0 1 1.724-.804h1.947l-1.017 1.018a.75.75 0 0 0 1.06 1.06L15.98 3.75zM.391 3.5H0V2h.391c1.109 0 2.16.49 2.873 1.34L4.89 5.277l-.979 1.167-1.796-2.14A2.25 2.25 0 0 0 .39 3.5z"/><path d="m7.5 10.723.98-1.167.957 1.14a2.25 2.25 0 0 0 1.724.804h1.947l-1.017-1.018a.75.75 0 1 1 1.06-1.06l2.829 2.828-2.829 2.828a.75.75 0 1 1-1.06-1.06L13.109 13H11.16a3.75 3.75 0 0 1-2.873-1.34l-.787-.938z"/>' },
   // Spotify has no rebuild icon; drawn at 2px stroke to match their weight.
-  refresh: '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 12a8.4 8.4 0 1 1-2.46-5.94"/><path d="M20.9 4.2v4.4h-4.4"/></g>',
+  refresh: { vb: 24, p: '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 12a8.4 8.4 0 1 1-2.46-5.94"/><path d="M20.9 4.2v4.4h-4.4"/></g>' },
 };
-const sicon = (...names) =>
-  h("span", { className: "bmx-svg", dangerouslySetInnerHTML: { __html: `<svg viewBox="0 0 24 24" fill="currentColor">${names.map((n) => ICONS[n]).join("")}</svg>` } });
+// Composed glyphs share the first one's viewBox (ring+plus are both 24).
+// Icons drawn for a 16px box carry proportionally heavier strokes, so they
+// render a touch smaller to sit at the same visual weight as the 24px ones.
+const sicon = (...names) => {
+  const vb = ICONS[names[0]].vb;
+  return h("span", {
+    className: "bmx-svg" + (vb === 16 ? " bmx-vb16" : ""),
+    dangerouslySetInnerHTML: { __html: `<svg viewBox="0 0 ${vb} ${vb}" fill="currentColor">${names.map((n) => ICONS[n].p).join("")}</svg>` },
+  });
+};
 
 const icon = (name, cls = "bmx-svg") =>
   h("span", { className: cls, dangerouslySetInnerHTML: { __html: `<svg viewBox="0 0 16 16" fill="currentColor">${Spicetify.SVGIcons[name] || ""}</svg>` } });
