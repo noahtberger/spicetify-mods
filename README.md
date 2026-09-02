@@ -100,6 +100,16 @@ spicetify apply -n     # then Cmd+R in Spotify to load the new code
 DevTools: `spicetify config always_enable_devtools 1`, then **Cmd+Opt+I**
 (macOS) / **Ctrl+Shift+I** (Windows) inside Spotify.
 
+### The custom app is copied, not symlinked
+
+`Extensions/` are symlinked into Spicetify's folder and edits are live.
+`CustomApps/better-mix/` **cannot** be — Spicetify skips symlinked files when
+installing an app, silently. So after editing anything in `CustomApps/`:
+
+```bash
+./sync-app.sh && spicetify apply -n
+```
+
 ## Gotchas
 
 **Editing a file changes nothing until you re-apply.** Spotify runs whatever
