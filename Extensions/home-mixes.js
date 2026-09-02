@@ -386,8 +386,15 @@
     idle(() => { scheduled = false; scan(); injectRow(); });
   }
 
-  // Purge stale entries once on startup so storage matches the current rule.
-  try { Spicetify.LocalStorage.set(SRC_KEY, JSON.stringify(readSources())); } catch {}
+  // Never rewrite the recorded sources through the name rule -- when that rule
+  // regressed it silently deleted every Daily Mix from storage. Filtering
+  // happens on read (readSources), so a bad rule only hides entries until it's
+  // fixed. Startup only drops entries whose id isn't Spotify-generated at all.
+  try {
+    const raw = JSON.parse(Spicetify.LocalStorage.get(SRC_KEY)) || [];
+    const kept = raw.filter((x) => MIX_ID.test(String(x?.uri).split(":").pop()));
+    if (kept.length !== raw.length) Spicetify.LocalStorage.set(SRC_KEY, JSON.stringify(kept));
+  } catch {}
 
   new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
   schedule();
