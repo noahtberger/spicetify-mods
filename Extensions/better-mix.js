@@ -454,27 +454,39 @@
   // background. Spotify refreshes its mixes daily, so a day is the right
   // staleness -- rebuilding more often just burns requests for the same input.
   const CUR_KEY = "home-mixes:current";
-  const STALE_MS = 24 * 60 * 60 * 1000;
   // Bump when the selection rules change. Mixes built under older rules get
   // rebuilt automatically at the next startup instead of waiting a day.
   const RULES_VERSION = 3;
   let building = false;
   const readCurrent = () => { try { return JSON.parse(localStorage.getItem(CUR_KEY)) || []; } catch { return []; } };
 
+  // Every Daily Mix, every day, at the first startup of the day -- plus
+  // whatever other mixes are on Home. "Stale" is calendar-based: built on a
+  // different local day than today. Spotify replaces its Daily Mixes
+  // overnight, so a mix built yesterday came from yesterday's input even if
+  // it's only a few hours old. An hourly check catches the day rolling over
+  // while Spotify stays open.
+  const today = () => new Date().toDateString();
+  const builtToday = (e) => !!e?.builtAt && new Date(e.builtAt).toDateString() === today();
+  const dailyNum = (m) => parseInt(String(m.name).replace(/\D/g, ""), 10) || 0;
+  const dailyMixes = () => spotifyMixes().filter((m) => /^daily mix/i.test(m.name)).sort((a, b) => dailyNum(a) - dailyNum(b));
+
   async function autoBuild(reason) {
     if (building) return;
     const store = readVirtual();
-    const due = readCurrent().filter((m) => {
+    const seen = new Set();
+    const targets = [...dailyMixes(), ...readCurrent()].filter((m) => !seen.has(m.uri) && seen.add(m.uri));
+    const due = targets.filter((m) => {
       const e = store.find((x) => x.sourceUri === m.uri);
-      return !e || e.rules !== RULES_VERSION || Date.now() - Date.parse(e.builtAt || 0) > STALE_MS;
+      return !e || e.rules !== RULES_VERSION || !builtToday(e);
     });
     if (!due.length) return;
     building = true;
-    console.log(`[better-mix] auto-building ${due.length} mix(es) — ${reason}`);
-    Spicetify.showNotification(`Building ${due.length} better mix${due.length > 1 ? "es" : ""}…`);
+    console.log(`[better-mix] auto-building ${due.length} mix(es) — ${reason}: ${due.map((m) => m.name).join(", ")}`);
+    Spicetify.showNotification(`Building today's mixes (${due.length})…`);
     const prevLog = logLine;
     logLine = (m) => console.log("[better-mix]", m);
-    try { await rebuildThese(due, settings()); }
+    try { await rebuildThese(due, settings()); Spicetify.showNotification("Today's mixes are ready"); }
     catch (e) { console.warn("[better-mix] auto-build failed:", e); }
     finally { logLine = prevLog; building = false; }
   }

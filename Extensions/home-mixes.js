@@ -301,14 +301,21 @@
     // Better versions of exactly the mixes we hid, in the same order. Ones
     // still building show as placeholders. Split into Daily Mixes and the rest.
     const store = readVirtual();
-    const items = readCurrent().map((c) => ({
-      shelf: c.shelf,
+    const current = readCurrent();
+    const entryFor = (c) => ({
+      shelf: c.shelf || "",
       ...(store.find((m) => m.sourceUri === c.uri) ||
           { pending: true, name: "Better " + String(c.name).replace(/^better\s+/i, "") }),
-    }));
+    });
+    // Daily row: EVERY Daily Mix we know about, in number order, whether or
+    // not Spotify's shelf happens to be showing it right now -- they're all
+    // rebuilt daily regardless. Other row: the mood/artist mixes on Home today.
+    const dailyNum = (m) => parseInt(String(m.name).replace(/\D/g, ""), 10) || 0;
+    const dailySources = readSources().filter((m) => isDaily(m.name)).sort((a, b) => dailyNum(a) - dailyNum(b));
+    const dailyShelf = current.find((c) => isDaily(c.name))?.shelf || "";
     const groups = [
-      { id: ROW_ID + "-daily", title: "Your daily mixes", items: items.filter((m) => isDaily(m.name)) },
-      { id: ROW_ID + "-other", title: "Your mixes",       items: items.filter((m) => !isDaily(m.name)) },
+      { id: ROW_ID + "-daily", title: "Your daily mixes", items: dailySources.map((c) => entryFor({ ...c, shelf: dailyShelf })) },
+      { id: ROW_ID + "-other", title: "Your mixes",       items: current.filter((c) => !isDaily(c.name)).map(entryFor) },
     ];
 
     for (const g of groups) {
