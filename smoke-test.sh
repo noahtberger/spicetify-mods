@@ -41,7 +41,7 @@ out.errors = errs;
 JSON.stringify(out);
 EOF
 fail=0
-for f in CustomApps/better-mix/better-mix.js Extensions/*.js; do
+for f in Extensions/*.js; do
   sed "s|FILE|'$PWD/$f'|g" "$D/smoke.js" > "$D/run.js"
   r=$(osascript -l JavaScript "$D/run.js" 2>&1 | tail -1)
   case "$r" in

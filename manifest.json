@@ -1,24 +1,5 @@
 [
   {
-    "name": "Better Mix",
-    "description": "Every mix Spotify makes for you, rebuilt daily without the songs you already play: popular tracks by artists you don't listen to, shown on Home in place of Spotify's rows, each with its own playlist-style page.",
-    "readme": "CustomApps/better-mix/README.md",
-    "branch": "main",
-    "authors": [
-      {
-        "name": "noahtberger",
-        "url": "https://github.com/noahtberger"
-      }
-    ],
-    "tags": [
-      "mixes",
-      "recommendations",
-      "home",
-      "daily mix"
-    ],
-    "preview": "preview-better-mix.png"
-  },
-  {
     "name": "Hide Announcements",
     "description": "Hides Spotify's promos, upsells and banners — and tells you when it does. Includes a self-test so you can verify it works, and a log of everything it has caught.",
     "main": "Extensions/hide-announcements.js",
