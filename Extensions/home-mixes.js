@@ -32,6 +32,20 @@
     return rows;
   };
 
+  // Every console helper exists from the first tick and delegates to the real
+  // implementation once init has run. Until then -- or if init threw -- they
+  // say so, instead of being undefined and looking like the file never loaded.
+  const notReady = (name) => () =>
+    console.warn(`[home-mixes] ${name}: not initialised yet` + (window.__homeMixesError ? ` — init failed: ${window.__homeMixesError}` : ""));
+  const api = () => window.__homeMixesApi;
+  window.homeHide   ||= (...p) => (api() ? api().hide(...p)   : notReady("homeHide")());
+  window.homeHide.reset ||= () => (api() ? api().reset()      : notReady("homeHide.reset")());
+  window.homeShelves ||= ()  => (api() ? api().shelves()      : notReady("homeShelves")());
+  window.homeRescan  ||= ()  => (api() ? api().rescan()       : notReady("homeRescan")());
+  window.homeMixes   ||= ()  => (api() ? api().mixes()        : notReady("homeMixes")());
+  window.homeSources.clear ||= () => (api() ? api().clearSources() : notReady("homeSources.clear")());
+  if (window.__homeMixesError) return;
+
   // --- Wait for Spicetify ----------------------------------------------------
   const startedAt = (window.__homeMixesStart ??= Date.now());
   const gate = {
@@ -53,6 +67,7 @@
   }
   window.__homeMixesReady = true;
   console.log(`[home-mixes] initialised after ${Date.now() - startedAt}ms`);
+  try {
 
   const HIDE_KEY = "home-mixes:patterns";
   const SHOW_KEY = "home-mixes:enabled";
@@ -370,6 +385,7 @@
   document.head.appendChild(css);
 
   // --- Toggle ------------------------------------------------------------------
+  try {
   new Spicetify.Menu.Item("Replace Spotify's mix rows", enabled, (self) => {
     enabled = !enabled;
     self.setState(enabled);
@@ -378,36 +394,48 @@
     else { unhideAll(); document.querySelectorAll(".hmx-row").forEach((r) => r.remove()); }
     Spicetify.showNotification(enabled ? "Showing your mixes" : "Spotify's rows restored");
   }).register();
+  } catch (e) { console.warn("[home-mixes] profile-menu toggle unavailable:", e); }
 
   // --- Console helpers ---------------------------------------------------------
-  window.homeShelves = () => {
-    const rows = shelves()
-      .filter((s) => !s.classList.contains("hmx-row") && headingOf(s))
-      .map((s) => { const m = mixesIn(s); return { heading: headingOf(s), mixes: m.length, cards: m.links, hidden: s.dataset.homeMixesHidden === "1" }; });
-    console.table(rows);
-    return rows;
-  };
-  window.homeHide = (...pats) => {
-    const next = [...new Set([...patterns(), ...pats])];
-    Spicetify.LocalStorage.set(HIDE_KEY, JSON.stringify(next));
-    document.querySelectorAll("[data-home-mixes-checked]").forEach((s) => delete s.dataset.homeMixesChecked);
-    schedule();
-    console.log("hiding:", next);
-  };
-  window.homeHide.reset = () => {
-    Spicetify.LocalStorage.set(HIDE_KEY, JSON.stringify(DEFAULT_PATTERNS));
-    unhideAll(); schedule();
-    console.log("reset to:", DEFAULT_PATTERNS);
+  window.__homeMixesApi = {
+    shelves() {
+      const rows = shelves()
+        .filter((s) => !s.classList.contains("hmx-row") && headingOf(s))
+        .map((s) => { const m = mixesIn(s); return { heading: headingOf(s), mixes: m.length, cards: m.links, hidden: s.dataset.homeMixesHidden === "1" }; });
+      console.table(rows);
+      return rows;
+    },
+    hide(...pats) {
+      const next = [...new Set([...patterns(), ...pats.map(String)])];
+      Spicetify.LocalStorage.set(HIDE_KEY, JSON.stringify(next));
+      document.querySelectorAll("[data-home-mixes-checked]").forEach((s) => delete s.dataset.homeMixesChecked);
+      schedule();
+      console.log("hiding:", next);
+    },
+    reset() {
+      Spicetify.LocalStorage.set(HIDE_KEY, JSON.stringify(DEFAULT_PATTERNS));
+      unhideAll(); schedule();
+      console.log("reset to:", DEFAULT_PATTERNS);
+    },
+    rescan() {
+      document.querySelectorAll("[data-home-mixes-checked]").forEach((s) => delete s.dataset.homeMixesChecked);
+      redraw();
+      console.log("rescanning…");
+    },
+    mixes() {
+      const v = readVirtual();
+      console.table(v.map((m) => ({ name: m.name, songs: m.tracks?.length, saved: !!m.savedUri, built: m.builtAt })));
+      return v;
+    },
+    clearSources() { Spicetify.LocalStorage.set(SRC_KEY, "[]"); console.log("captured mixes cleared"); },
   };
   window.homeSources = () => { console.table(readSources()); return readSources(); };
-  window.homeSources.clear = () => { Spicetify.LocalStorage.set(SRC_KEY, "[]"); console.log("captured mixes cleared"); };
-  window.homeRescan = () => {
-    document.querySelectorAll("[data-home-mixes-checked]").forEach((s) => delete s.dataset.homeMixesChecked);
-    redraw();
-    console.log("rescanning…");
-  };
-  window.homeMixes = () => { const v = readVirtual(); console.table(v.map((m) => ({ name: m.name, songs: m.tracks?.length, saved: !!m.savedUri, built: m.builtAt }))); return v; };
+  window.homeSources.clear = () => window.__homeMixesApi.clearSources();
 
   console.log(`[home-mixes] ${readSources().length} Spotify mixes recorded, ${readVirtual().length} of yours built. ` +
-    "homeShelves() · homeSources() · homeMixes()");
+    "homeShelves() · homeSources() · homeMixes() · homeHide(\"heading\")");
+  } catch (e) {
+    window.__homeMixesError = e?.message || String(e);
+    console.error("[home-mixes] init FAILED:", e);
+  }
 })();

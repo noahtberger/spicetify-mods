@@ -25,11 +25,13 @@ const go = (to) => Spicetify.Platform.History.push(to);
 const openMix = (m) => go({ pathname: ROUTE, search: `?id=${m.id}`, state: { id: m.id } });
 
 const fmtTrack = (ms) => {
+  ms = Number(ms);
   if (!ms) return "–:––";
   const s = Math.round(ms / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 };
 const fmtTotal = (ms) => {
+  ms = Number(ms);
   if (!ms) return "";
   const m = Math.round(ms / 60000);
   return m >= 60 ? `${Math.floor(m / 60)} hr ${m % 60} min` : `${m} min`;
@@ -91,7 +93,7 @@ function Index({ store }) {
 function MixPage({ mix }) {
   const BM = window.BetterMix;
   const tracks = mix.tracks || [];
-  const total = tracks.reduce((a, t) => a + (t.duration || 0), 0);
+  const total = tracks.reduce((a, t) => a + (Number(t.duration) || 0), 0);
   const [busy, setBusy] = useState(false);
 
   const play = (i = 0) =>

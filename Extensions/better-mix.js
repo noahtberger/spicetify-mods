@@ -211,9 +211,18 @@
         logLine(`still short at ${fresh.length}: the recommender only offered ${candidates.length} candidates for this one`);
     }
 
-    // A few tracks you know, spread through rather than front-loaded.
-    const source = await playlistTracks(sourceUri).catch(() => []);
-    const familiar = shuffle(source.filter((t) => t?.uri)).slice(0, familiarCount);
+    // A few tracks you know, spread through rather than front-loaded -- but
+    // only ones whose artist the recommender ALSO returned for this playlist.
+    // Spotify's mixes carry a few outliers from your history (a rap track in
+    // the J-Pop Mix), and without genre data the recommender's artist set is
+    // the best signal there is for what actually fits.
+    const source = (await playlistTracks(sourceUri).catch(() => [])).filter((t) => t?.uri).map(normalize);
+    const onTheme = new Set(candidates.flatMap((t) => (t.artists || []).map((a) => a.uri || a.id)));
+    let familiarPool = source.filter((t) => (t.artists || []).some((a) => onTheme.has(a.uri || a.id)));
+    if (familiarPool.length < familiarCount) familiarPool = source;   // too strict for this one -- fall back
+    const familiar = shuffle(familiarPool).slice(0, familiarCount);
+    if (familiar.length)
+      logLine(`familiar: ${familiar.map((t) => `${t.name} — ${(t.artists || []).map((a) => a.name).join(", ")}`).join("  ·  ")}`);
     const out = fresh.slice(0, Math.max(0, total - familiar.length));
     familiar.forEach((t, i) =>
       out.splice(Math.floor(((i + 1) * out.length) / (familiar.length + 1)), 0, t)
@@ -258,6 +267,20 @@
     try { localStorage.setItem(VIRT_KEY, JSON.stringify(list)); } catch (e) { console.warn("[better-mix] store write failed", e); }
     window.dispatchEvent(new Event("better-mix:updated"));
   };
+  // PlaylistAPI.getContents items aren't shaped like recommender tracks:
+  // duration is {milliseconds}, art is album.images[]. Flatten to one shape so
+  // a familiar track gets a cover and a time like everything else -- without
+  // this they showed as a grey square and "NaN:NaN".
+  const normalize = (t) => ({
+    ...t,
+    duration: typeof t?.duration === "object" ? (t.duration?.milliseconds ?? null) : (t?.duration ?? null),
+    album: {
+      ...(t?.album || {}),
+      imageUrl: t?.album?.imageUrl || t?.album?.images?.[0]?.url || t?.album?.image || null,
+      largeImageUrl: t?.album?.largeImageUrl || t?.album?.images?.slice(-1)?.[0]?.url || null,
+    },
+  });
+
   // Keep only what a card needs. Full track objects x 30 mixes would bloat
   // localStorage for no benefit.
   const slim = (t) => ({
