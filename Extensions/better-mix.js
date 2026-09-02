@@ -325,23 +325,50 @@
     why: t.why || null,       // which rule let it in -- so a bad pick is traceable
   });
 
-  // Play a virtual mix: first track directly, the rest queued behind it.
-  // No playlist involved -- the queue IS the mechanism. Lives here so the
-  // Home row and the app page share one implementation.
+  // Play a virtual mix as its own CONTEXT -- the whole tracklist handed to the
+  // player in one call, the way a playlist plays -- instead of queueing.
+  // Queueing works, but Spotify toasts "Added to queue" from inside its own
+  // queue code (nothing here can silence it), and prev/next don't treat the
+  // mix as one thing. The context uri is a label; the tracks come from `pages`.
+  //
+  // Which shapes this client accepts isn't documented, so try the cleanest
+  // first and VERIFY playback actually started on the expected track before
+  // trusting any of them. The queue is the last resort.
   async function play(mix, startAt = 0) {
-    const uris = (mix?.tracks || []).map((t) => t.uri).filter(Boolean).slice(startAt);
-    if (!uris.length) return;
+    const all = (mix?.tracks || []).map((t) => t.uri).filter(Boolean);
+    if (!all.length) return;
     const PA = P().PlayerAPI;
+    const pages = (uris) => ({ pages: [{ items: uris.map((uri) => ({ uri })) }] });
+    const want = all[startAt] || all[0];
+    const startedOn = async (uri) => {
+      await new Promise((r) => setTimeout(r, 700));
+      return Spicetify.Player.data?.item?.uri === uri;
+    };
+
+    const labels = ["spotify:app:better-mix", mix.savedUri, mix.sourceUri].filter(Boolean);
+    for (const uri of labels) {
+      const attempts = [
+        ["skipTo", () => PA.play({ uri, ...pages(all) }, {}, { skipTo: { index: startAt } })],
+        ["sliced", () => PA.play({ uri, ...pages(all.slice(startAt)) }, {}, {})],
+      ];
+      for (const [how, go] of attempts) {
+        try {
+          await go();
+          if (await startedOn(want)) { Spicetify.showNotification(`Playing ${mix.name}`); return; }
+          console.warn(`[better-mix] context play (${how}, ${uri}) didn't start the expected track`);
+        } catch (e) {
+          console.warn(`[better-mix] context play (${how}, ${uri}) refused:`, e?.message || e);
+        }
+      }
+    }
+
+    // Last resort: first track directly, the rest queued. Spotify will toast.
+    console.warn("[better-mix] falling back to the queue");
+    const uris = all.slice(startAt);
     try { await PA.clearQueue?.(); } catch {}
     await Spicetify.Player.playUri(uris[0]);
     const rest = uris.slice(1).map((uri) => ({ uri }));
-    if (rest.length) {
-      try { await PA.addToQueue(rest); }
-      catch (e) {
-        try { await Spicetify.addToQueue?.(rest); }
-        catch (e2) { console.warn("[better-mix] couldn't queue the rest:", e2); }
-      }
-    }
+    if (rest.length) { try { await PA.addToQueue(rest); } catch (e) { console.warn("[better-mix] couldn't queue the rest:", e); } }
     Spicetify.showNotification(`Playing ${mix.name}`);
   }
 
