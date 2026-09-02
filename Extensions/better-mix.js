@@ -397,6 +397,7 @@
     const store = readVirtual();
     const done = [];
     for (const m of mixes) {
+      if (done.length) await sleep(300);      // let the UI breathe between mixes
       logLine(`\n=== ${m.name} ===`);
       try {
         const tracks = await buildMix({ sourceUri: m.uri, total, familiarCount, maxPerArtist });
@@ -460,12 +461,13 @@
   let building = false;
   const readCurrent = () => { try { return JSON.parse(localStorage.getItem(CUR_KEY)) || []; } catch { return []; } };
 
-  // Every Daily Mix, every day, at the first startup of the day -- plus
-  // whatever other mixes are on Home. "Stale" is calendar-based: built on a
-  // different local day than today. Spotify replaces its Daily Mixes
-  // overnight, so a mix built yesterday came from yesterday's input even if
-  // it's only a few hours old. An hourly check catches the day rolling over
-  // while Spotify stays open.
+  // EVERY Spotify mix it has ever seen -- daily, mood, artist -- rebuilt once
+  // per calendar day at the first startup of the day, no button anywhere.
+  // Order: Daily Mixes, then whatever's on Home right now, then the rest.
+  // "Stale" is calendar-based: built on a different local day than today.
+  // Spotify refreshes its mixes overnight, so yesterday's build came from
+  // yesterday's input even if it's only hours old. An hourly check catches
+  // the day rolling over while Spotify stays open.
   const today = () => new Date().toDateString();
   const builtToday = (e) => !!e?.builtAt && new Date(e.builtAt).toDateString() === today();
   const dailyNum = (m) => parseInt(String(m.name).replace(/\D/g, ""), 10) || 0;
@@ -475,15 +477,15 @@
     if (building) return;
     const store = readVirtual();
     const seen = new Set();
-    const targets = [...dailyMixes(), ...readCurrent()].filter((m) => !seen.has(m.uri) && seen.add(m.uri));
+    const targets = [...dailyMixes(), ...readCurrent(), ...spotifyMixes()].filter((m) => !seen.has(m.uri) && seen.add(m.uri));
     const due = targets.filter((m) => {
       const e = store.find((x) => x.sourceUri === m.uri);
       return !e || e.rules !== RULES_VERSION || !builtToday(e);
     });
     if (!due.length) return;
     building = true;
-    console.log(`[better-mix] auto-building ${due.length} mix(es) — ${reason}: ${due.map((m) => m.name).join(", ")}`);
-    Spicetify.showNotification(`Building today's mixes (${due.length})…`);
+    console.log(`[better-mix] auto-building ${due.length} of ${targets.length} mixes — ${reason}: ${due.map((m) => m.name).join(", ")}`);
+    Spicetify.showNotification(`Building today's mixes (${due.length}) — a few minutes in the background`);
     const prevLog = logLine;
     logLine = (m) => console.log("[better-mix]", m);
     try { await rebuildThese(due, settings()); Spicetify.showNotification("Today's mixes are ready"); }
@@ -526,7 +528,7 @@
         <label>Size <input class="bmx-in" id="bmx-total" type="number" min="5" max="100" value="${st.total}"></label>
         <label>Ones you know <input class="bmx-in" id="bmx-fam" type="number" min="0" max="20" value="${st.familiarCount}"></label>
         <label>Max per artist <input class="bmx-in" id="bmx-cap" type="number" min="1" max="5" value="${st.maxPerArtist}"></label>
-        <label>How many mixes <input class="bmx-in" id="bmx-count" type="number" min="1" max="20" value="5"></label>
+        <label>How many mixes <input class="bmx-in" id="bmx-count" type="number" min="1" max="200" value="${spotifyMixes().length || 5}"></label>
       </div>
       <div class="bmx-actions">
         <button class="bmx-btn" id="bmx-preview">Preview</button>
