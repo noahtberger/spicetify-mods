@@ -12,8 +12,11 @@
 // No JSX (no build step), so React.createElement via a short alias.
 // ============================================================================
 
-const { React } = Spicetify;
-const h = React.createElement;
+// Resolved lazily: this file runs at load, before Spicetify.React exists.
+// Reading it at the top level would throw and the app would never mount.
+const h = (...a) => Spicetify.React.createElement(...a);
+const useState = (...a) => Spicetify.useState(...a);
+const useEffect = (...a) => Spicetify.useEffect(...a);
 const ROUTE = "/better-mix";
 
 const readStore = () => { try { return JSON.parse(localStorage.getItem("better-mix:virtual")) || []; } catch { return []; } };
@@ -39,15 +42,15 @@ const icon = (name, cls = "bmx-svg") =>
 // won't remount on its own. Subscribe to History and re-render on change.
 function useLocation() {
   const H = Spicetify.Platform.History;
-  const [loc, setLoc] = React.useState(H.location);
-  React.useEffect(() => H.listen((l) => setLoc(l)), []);
+  const [loc, setLoc] = useState(H.location);
+  useEffect(() => H.listen((l) => setLoc(l)), []);
   return loc;
 }
 // better-mix.js fires this after every write, so a rebuild or a save shows
 // up here without a refresh.
 function useStore() {
-  const [store, setStore] = React.useState(readStore);
-  React.useEffect(() => {
+  const [store, setStore] = useState(readStore);
+  useEffect(() => {
     const f = () => setStore(readStore());
     window.addEventListener("better-mix:updated", f);
     return () => window.removeEventListener("better-mix:updated", f);
@@ -84,7 +87,7 @@ function MixPage({ mix }) {
   const BM = window.BetterMix;
   const tracks = mix.tracks || [];
   const total = tracks.reduce((a, t) => a + (t.duration || 0), 0);
-  const [busy, setBusy] = React.useState(false);
+  const [busy, setBusy] = useState(false);
 
   const play = (i = 0) =>
     BM?.play ? BM.play(mix, i) : Spicetify.showNotification("Better Mix isn't loaded", true);
@@ -132,7 +135,7 @@ function MixPage({ mix }) {
               h("span", { className: "bmx-tname" }, t.name),
               h("span", { className: "bmx-tartists" },
                 (t.artists || []).map((a, j) =>
-                  h(React.Fragment, { key: j }, j ? ", " : "", a.uri ? link(a.name, `/artist/${idOf(a.uri)}`) : a.name))))),
+                  h(Spicetify.React.Fragment, { key: j }, j ? ", " : "", a.uri ? link(a.name, `/artist/${idOf(a.uri)}`) : a.name))))),
           h("span", { className: "bmx-album" },
             t.album?.uri ? link(t.album.name, `/album/${idOf(t.album.uri)}`) : (t.album?.name || "")),
           h("span", { className: "bmx-dur" }, fmtTrack(t.duration))))));

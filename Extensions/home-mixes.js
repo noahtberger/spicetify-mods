@@ -119,6 +119,25 @@
       }
     }
     if (found.length) record(found);
+
+    // What's on Home RIGHT NOW, from every hidden shelf present -- not just
+    // the ones this pass checked, or a shelf that renders late would replace
+    // the list instead of joining it. better-mix builds from this.
+    if (onHome()) {
+      const current = [...document.querySelectorAll('[data-home-mixes-hidden="1"]')].flatMap((s) => mixesIn(s));
+      if (current.length) writeCurrent(current);
+    }
+  }
+
+  const CUR_KEY = "home-mixes:current";
+  const readCurrent = () => { try { return JSON.parse(localStorage.getItem(CUR_KEY)) || []; } catch { return []; } };
+  function writeCurrent(list) {
+    const next = JSON.stringify(list.map((m) => ({ uri: m.uri, name: m.name })));
+    let prev = null; try { prev = localStorage.getItem(CUR_KEY); } catch {}
+    if (prev === next) return;
+    try { localStorage.setItem(CUR_KEY, next); } catch {}
+    window.dispatchEvent(new Event("home-mixes:current"));   // better-mix listens
+    document.getElementById(ROW_ID)?.remove();               // redraw with the new set
   }
 
   function record(found) {
@@ -175,6 +194,18 @@
   const icon = (name) =>
     `<svg viewBox="0 0 16 16" fill="currentColor">${Spicetify.SVGIcons[name] || ""}</svg>`;
 
+  // Shown while a mix is still being built, so the row never looks like
+  // Spotify's simply vanished.
+  function pendingCard(name) {
+    const el = document.createElement("div");
+    el.className = "hmx-card hmx-pending";
+    el.innerHTML = `
+      <div class="hmx-art"><div class="hmx-fallback hmx-shimmer"></div></div>
+      <div class="hmx-name">${esc(name)}</div>
+      <div class="hmx-meta"><span>building…</span></div>`;
+    return el;
+  }
+
   function card(mix) {
     const el = document.createElement("div");
     el.className = "hmx-card";
@@ -228,8 +259,14 @@
     const existing = document.getElementById(ROW_ID);
     if (!onHome()) { existing?.remove(); return; }
 
-    const mixes = readVirtual();
-    if (!mixes.length) { existing?.remove(); return; }
+    // Better versions of exactly the mixes we hid, in the same order. Ones
+    // still building show as placeholders.
+    const store = readVirtual();
+    const items = readCurrent().map((c) =>
+      store.find((m) => m.sourceUri === c.uri) ||
+      { pending: true, name: "Better " + String(c.name).replace(/^better\s+/i, "") });
+    if (!items.length) { existing?.remove(); return; }
+
     if (existing) {
       if (existing.dataset.placed === "fallback") {
         const slot = document.querySelector('[data-home-mixes-hidden="1"]');
@@ -246,14 +283,12 @@
     row.innerHTML = `
       <div class="hmx-head">
         <h2 class="hmx-heading">Your mixes</h2>
-        <span><button class="hmx-rebuild" id="hmx-showall">Show all</button><button class="hmx-rebuild">Rebuild</button></span>
+        <button class="hmx-rebuild" id="hmx-showall">Show all</button>
       </div>
       <div class="hmx-strip"></div>`;
     row.querySelector("#hmx-showall").onclick = () => Spicetify.Platform.History.push("/better-mix");
-    row.querySelector(".hmx-rebuild:not(#hmx-showall)").onclick = () =>
-      window.BetterMix?.open ? window.BetterMix.open() : Spicetify.showNotification("Better Mix isn't loaded", true);
     const strip = row.querySelector(".hmx-strip");
-    mixes.forEach((m) => strip.appendChild(card(m)));
+    items.forEach((m) => strip.appendChild(m.pending ? pendingCard(m.name) : card(m)));
     placeRow(row);   // nothing to anchor to yet -> try again on the next pass
   }
 
@@ -303,6 +338,10 @@
     .hmx-meta { margin-top: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--spice-subtext, #b3b3b3); }
     .hmx-save { background: transparent; border: 1px solid var(--spice-misc, #555); color: var(--spice-subtext, #b3b3b3); border-radius: 12px; padding: 2px 10px; font-size: 11px; font-weight: 700; cursor: pointer; }
     .hmx-save:hover { border-color: var(--spice-button, #1ed760); color: var(--spice-text, #fff); }
+    .hmx-pending { opacity: .7; }
+    .hmx-shimmer { background: linear-gradient(110deg, var(--spice-card, #222) 30%, var(--spice-highlight, #333) 50%, var(--spice-card, #222) 70%);
+                   background-size: 200% 100%; animation: hmx-shimmer 1.4s linear infinite; }
+    @keyframes hmx-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
   `;
   document.head.appendChild(css);
 

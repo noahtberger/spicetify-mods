@@ -19,37 +19,49 @@
 // ============================================================================
 
 (function betterMix() {
-  // A stub from the very first tick, so anything that calls BetterMix before
-  // initialisation finishes gets "still starting" instead of "isn't loaded".
-  // Replaced with the real object at the bottom once everything's ready.
+  // A stub from the very first tick, so anything calling BetterMix before
+  // init finishes gets a clear answer. Replaced with the real object at the
+  // bottom once everything's ready -- or left standing, with the error, if
+  // init throws, so "still starting" can never be a permanent state.
   window.BetterMix ||= {
     ready: false,
-    open: () => Spicetify?.showNotification?.("Better Mix is still starting — try again in a moment"),
+    open: () => Spicetify?.showNotification?.(window.__betterMixError
+      ? `Better Mix failed to start: ${window.__betterMixError}`
+      : "Better Mix is still starting — try again in a moment"),
   };
+  if (window.__betterMixError) return;
 
   const startedAt = (window.__betterMixStart ??= Date.now());
-  const gate = {
-    PlaylistAPI: !!Spicetify?.Platform?.PlaylistAPI,
-    PlayerAPI:   !!Spicetify?.Platform?.PlayerAPI,
-    Playbar:     !!Spicetify?.Playbar,
-    PopupModal:  !!Spicetify?.PopupModal,
-    ContextMenu: !!Spicetify?.ContextMenu,
+  const waited = Date.now() - startedAt;
+  // Truly required: the recommender and a way to talk to you. Everything
+  // else is nice-to-have -- wait up to 10s for it, then carry on without.
+  const core = !!(Spicetify?.Platform?.PlaylistAPI && Spicetify?.showNotification);
+  const nice = {
+    Playbar: !!Spicetify?.Playbar, PopupModal: !!Spicetify?.PopupModal,
+    ContextMenu: !!Spicetify?.ContextMenu, PlayerAPI: !!Spicetify?.Platform?.PlayerAPI,
   };
-  if (!Object.values(gate).every(Boolean)) {
-    const waited = Date.now() - startedAt;
+  const missing = Object.keys(nice).filter((k) => !nice[k]);
+  if (!core || (missing.length && waited < 10000)) {
     if (waited < 400) console.log("[better-mix] loaded, waiting for Spicetify…");
     else if (waited > 8000 && Date.now() - (window.__betterMixWarn || 0) > 8000) {
       window.__betterMixWarn = Date.now();
-      console.warn(`[better-mix] still waiting after ${Math.round(waited / 1000)}s — missing: ` +
-        Object.keys(gate).filter((k) => !gate[k]).join(", "));
+      console.warn(`[better-mix] still waiting after ${Math.round(waited / 1000)}s — ` +
+        `${core ? "" : "no PlaylistAPI yet; "}missing: ${missing.join(", ") || "nothing"}`);
     }
     setTimeout(betterMix, 300);
     return;
   }
-  console.log(`[better-mix] initialised after ${Date.now() - startedAt}ms`);
+  if (missing.length) console.warn(`[better-mix] starting without: ${missing.join(", ")} (those features off)`);
+  console.log(`[better-mix] initialised after ${waited}ms`);
+  try {
 
   const P = () => Spicetify.Platform;
   let logLine = () => {};
+
+  const SET_KEY = "better-mix:settings";
+  const DEFAULTS = { total: 50, familiarCount: 3, maxPerArtist: 2 };
+  const settings = () => { try { return { ...DEFAULTS, ...(JSON.parse(localStorage.getItem(SET_KEY)) || {}) }; } catch { return { ...DEFAULTS }; } };
+  const saveSettings = (o) => { try { localStorage.setItem(SET_KEY, JSON.stringify(o)); } catch {} };
 
   // home-mixes.js records the Spotify mix shelves it hides. Reading them from
   // storage means this works anywhere, not just while Home is on screen.
@@ -97,34 +109,42 @@
   }
 
   // Everything we're going to subtract. Tracks by URI, artists by URI/id.
-  async function knownStuff(sourceUri) {
-    const tracks = new Set();
-    const artists = new Set();
+  // Your recent listening and library don't change between one mix and the
+  // next, so fetch them once and reuse for a few minutes. Building ten mixes
+  // used to mean ten identical 300-track library reads.
+  let base = null, baseAt = 0;
+  async function baseKnown() {
+    if (base && Date.now() - baseAt < 10 * 60 * 1000) return base;
+    const tracks = new Set(), artists = new Set();
     const note = (t) => {
       if (t?.uri) tracks.add(t.uri);
       (t?.artists || []).forEach((a) => a && artists.add(a.uri || a.id));
     };
-
-    // Recently played comes back as bare URI strings -- no artist data.
-    try {
+    try {   // recently played comes back as bare URI strings -- no artist data
       const recent = await P().AssistedCurationAPI.getRecentlyPlayedTracks({ limit: 50 });
       (recent || []).forEach((u) => typeof u === "string" && tracks.add(u));
-      logLine(`known: ${tracks.size} recently played`);
     } catch (e) { logLine("recently-played unavailable: " + e.message); }
-
     try {
       const lib = await P().LibraryAPI.getTracks({ limit: 300 });
       (lib?.items || []).forEach(note);
-      logLine(`known: ${tracks.size} after your library`);
     } catch (e) { logLine("library unavailable: " + e.message); }
+    base = { tracks, artists }; baseAt = Date.now();
+    return base;
+  }
 
-    // The source playlist's own artists count as "already yours" -- you asked
-    // for songs by OTHER artists that fit, not more of the same ones.
+  // Everything we subtract for ONE mix: the shared base plus the source
+  // playlist's own tracks and artists -- you asked for songs by OTHER artists
+  // that fit, not more of the same ones.
+  async function knownStuff(sourceUri) {
+    const b = await baseKnown();
+    const tracks = new Set(b.tracks), artists = new Set(b.artists);
     try {
-      (await playlistTracks(sourceUri)).forEach(note);
-      logLine(`known: ${tracks.size} tracks / ${artists.size} artists`);
+      (await playlistTracks(sourceUri)).forEach((t) => {
+        if (t?.uri) tracks.add(t.uri);
+        (t?.artists || []).forEach((a) => a && artists.add(a.uri || a.id));
+      });
     } catch (e) { logLine("source playlist unreadable: " + e.message); }
-
+    logLine(`known: ${tracks.size} tracks / ${artists.size} artists`);
     return { tracks, artists };
   }
 
@@ -272,12 +292,7 @@
   // Spotify already sorts these by mood and activity -- Chill Happy, Driving,
   // Melancholy. Reusing their grouping is far better than trying to cluster
   // your library into moods, and the names come out meaningful for free.
-  async function rebuildAll({ limit, total, familiarCount, maxPerArtist }) {
-    const mixes = spotifyMixes().slice(0, limit);
-    if (!mixes.length) {
-      throw new Error("No Spotify mixes recorded yet — open Home once so home-mixes can see them.");
-    }
-
+  async function rebuildThese(mixes, { total, familiarCount, maxPerArtist }) {
     const store = readVirtual();
     const done = [];
     for (const m of mixes) {
@@ -294,17 +309,54 @@
           tracks: tracks.map(slim),
         };
         if (prev) Object.assign(prev, entry); else store.push(entry);
-        writeVirtual(store);                       // redraw after each, not at the end
+        writeVirtual(store);                       // the row updates after each one
         logLine(`built "${name}" (${tracks.length} tracks)`);
         done.push(name);
       } catch (e) {
-        // One dud mix shouldn't abandon the rest of the run -- but say why.
         const where = e?.requestUrl ? ` at ${String(e.requestUrl).split("/").slice(-2).join("/")}` : "";
         logLine(`skipped — ${e?.message || e?.name || e}${e?.status ? ` (HTTP ${e.status})` : ""}${where}`);
       }
     }
     return done;
   }
+
+  async function rebuildAll({ limit, ...opts }) {
+    const mixes = spotifyMixes().slice(0, limit);
+    if (!mixes.length) throw new Error("No Spotify mixes recorded yet — open Home once so home-mixes can see them.");
+    return rebuildThese(mixes, opts);
+  }
+
+  // --- Automatic ---------------------------------------------------------------
+  // No button. home-mixes.js writes the mixes currently on your Home page to
+  // "home-mixes:current" whenever it hides Spotify's row; anything in that
+  // list that isn't built yet, or is older than a day, gets built here in the
+  // background. Spotify refreshes its mixes daily, so a day is the right
+  // staleness -- rebuilding more often just burns requests for the same input.
+  const CUR_KEY = "home-mixes:current";
+  const STALE_MS = 24 * 60 * 60 * 1000;
+  let building = false;
+  const readCurrent = () => { try { return JSON.parse(localStorage.getItem(CUR_KEY)) || []; } catch { return []; } };
+
+  async function autoBuild(reason) {
+    if (building) return;
+    const store = readVirtual();
+    const due = readCurrent().filter((m) => {
+      const e = store.find((x) => x.sourceUri === m.uri);
+      return !e || Date.now() - Date.parse(e.builtAt || 0) > STALE_MS;
+    });
+    if (!due.length) return;
+    building = true;
+    console.log(`[better-mix] auto-building ${due.length} mix(es) — ${reason}`);
+    Spicetify.showNotification(`Building ${due.length} better mix${due.length > 1 ? "es" : ""}…`);
+    const prevLog = logLine;
+    logLine = (m) => console.log("[better-mix]", m);
+    try { await rebuildThese(due, settings()); }
+    catch (e) { console.warn("[better-mix] auto-build failed:", e); }
+    finally { logLine = prevLog; building = false; }
+  }
+  window.addEventListener("home-mixes:current", () => autoBuild("Home changed"));
+  setInterval(() => autoBuild("daily refresh"), 60 * 60 * 1000);
+  setTimeout(() => autoBuild("startup"), 4000);
 
   // Promote a virtual mix to a real playlist. Called from the card's "save".
   async function saveVirtual(id) {
@@ -327,6 +379,7 @@
     try { lists = await myPlaylists(); }
     catch (e) { wrap.querySelector("#bmx-log").textContent = "Couldn't read your playlists: " + e.message; return; }
 
+    const st = settings();
     wrap.innerHTML = `
       <div class="bmx-row">
         <label style="flex:1 1 260px">Base it on
@@ -334,15 +387,15 @@
             ${lists.map((p) => `<option value="${p.uri}"${p.uri === preselect ? " selected" : ""}>${(p.name || p.uri).replace(/</g, "&lt;")}</option>`).join("")}
           </select>
         </label>
-        <label>Size <input class="bmx-in" id="bmx-total" type="number" min="5" max="100" value="25"></label>
-        <label>Ones you know <input class="bmx-in" id="bmx-fam" type="number" min="0" max="20" value="3"></label>
-        <label>Max per artist <input class="bmx-in" id="bmx-cap" type="number" min="1" max="5" value="2"></label>
+        <label>Size <input class="bmx-in" id="bmx-total" type="number" min="5" max="100" value="${st.total}"></label>
+        <label>Ones you know <input class="bmx-in" id="bmx-fam" type="number" min="0" max="20" value="${st.familiarCount}"></label>
+        <label>Max per artist <input class="bmx-in" id="bmx-cap" type="number" min="1" max="5" value="${st.maxPerArtist}"></label>
         <label>How many mixes <input class="bmx-in" id="bmx-count" type="number" min="1" max="20" value="5"></label>
       </div>
       <div class="bmx-actions">
         <button class="bmx-btn" id="bmx-preview">Preview</button>
         <button class="bmx-btn" id="bmx-create">Create from this playlist</button>
-        <button class="bmx-btn bmx-primary" id="bmx-all">Build my Spotify mixes (${spotifyMixes().length})</button>
+        <button class="bmx-btn bmx-primary" id="bmx-all">Rebuild all now (${spotifyMixes().length})</button>
       </div>
       <pre class="bmx-log" id="bmx-log"></pre>`;
 
@@ -353,6 +406,7 @@
     const run = async (create) => {
       logEl.textContent = "";
       wrap.querySelectorAll("button").forEach((b) => (b.disabled = true));
+      saveSettings({ total: +val("#bmx-total"), familiarCount: +val("#bmx-fam"), maxPerArtist: +val("#bmx-cap") });
       try {
         const tracks = await buildMix({
           sourceUri: val("#bmx-src"),
@@ -383,6 +437,7 @@
     wrap.querySelector("#bmx-all").onclick = async () => {
       logEl.textContent = "";
       wrap.querySelectorAll("button").forEach((b) => (b.disabled = true));
+      saveSettings({ total: +val("#bmx-total"), familiarCount: +val("#bmx-fam"), maxPerArtist: +val("#bmx-cap") });
       try {
         const made = await rebuildAll({
           limit: +val("#bmx-count"),
@@ -425,21 +480,27 @@
   `;
   document.head.appendChild(css);
 
-  const ICON = `<svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor">${Spicetify.SVGIcons.enhance}</svg>`;
-  new Spicetify.Playbar.Button("Better Mix", ICON, openMenu)
-    .element.classList.add("bmx-playbar-btn");
-
+  if (Spicetify.Playbar) {
+    const ICON = `<svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor">${Spicetify.SVGIcons.enhance}</svg>`;
+    new Spicetify.Playbar.Button("Better Mix", ICON, openMenu).element.classList.add("bmx-playbar-btn");
+  }
   // Right-click a playlist -> build from it directly. The playlist you clicked
   // IS the input, so this skips the picker entirely.
-  new Spicetify.ContextMenu.Item(
-    "Better Mix from this",
-    (uris) => openMenu(uris?.[0]),
-    (uris) => uris?.length === 1 && String(uris[0]).includes(":playlist:"),
-    "enhance"
-  ).register();
+  if (Spicetify.ContextMenu) {
+    new Spicetify.ContextMenu.Item(
+      "Better Mix from this",
+      (uris) => openMenu(uris?.[0]),
+      (uris) => uris?.length === 1 && String(uris[0]).includes(":playlist:"),
+      "enhance"
+    ).register();
+  }
 
   // Shared surface for home-mixes.js (and for poking at from the console).
   window.BetterMix = { ready: true, open: () => openMenu(), rebuildAll, saveVirtual, play, virtual: readVirtual };
 
   console.log(`[better-mix] loaded — ${readVirtual().length} mixes in store`);
+  } catch (e) {
+    window.__betterMixError = e?.message || String(e);
+    console.error("[better-mix] init FAILED:", e);
+  }
 })();
