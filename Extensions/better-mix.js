@@ -360,9 +360,23 @@
   // Which shapes this client accepts isn't documented, so try the cleanest
   // first and VERIFY playback actually started on the expected track before
   // trusting any of them. The queue is the last resort.
-  async function play(mix, startAt = 0) {
-    const all = (mix?.tracks || []).map((t) => t.uri).filter(Boolean);
+  // Shuffle is a sticky preference, like Spotify's. Kept separate from the
+  // build settings: this is about playback, not what goes in a mix.
+  const SHUF_KEY = "better-mix:shuffle";
+  const getShuffle = () => { try { return localStorage.getItem(SHUF_KEY) === "true"; } catch { return false; } };
+  const setShuffle = (v) => { try { localStorage.setItem(SHUF_KEY, String(!!v)); } catch {} };
+
+  async function play(mix, startAt = 0, opts = {}) {
+    let all = (mix?.tracks || []).map((t) => t.uri).filter(Boolean);
     if (!all.length) return;
+    // With shuffle on, the track you clicked still plays first and the rest
+    // are randomised behind it -- what Spotify does when you pick a song in
+    // a shuffled playlist.
+    if (opts.shuffle ?? getShuffle()) {
+      const first = all[startAt] ?? all[0];
+      all = [first, ...shuffle(all.filter((_, i) => i !== startAt))];
+      startAt = 0;
+    }
     const PA = P().PlayerAPI;
     const pages = (uris) => ({ pages: [{ items: uris.map((uri) => ({ uri })) }] });
     const want = all[startAt] || all[0];
@@ -668,7 +682,8 @@
   }
 
   // Shared surface for home-mixes.js (and for poking at from the console).
-  window.BetterMix = { ready: true, open: () => openMenu(), rebuildAll, rebuildOne, saveVirtual, play, virtual: readVirtual, get progress() { return { ...progress }; } };
+  window.BetterMix = { ready: true, open: () => openMenu(), rebuildAll, rebuildOne, saveVirtual, play,
+    getShuffle, setShuffle, virtual: readVirtual, get progress() { return { ...progress }; } };
 
   console.log(`[better-mix] loaded — ${readVirtual().length} mixes in store`);
   } catch (e) {

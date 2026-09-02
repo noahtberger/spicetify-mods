@@ -52,6 +52,7 @@ const ICONS = {
   ring:  '<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M1 12C1 5.925 5.925 1 12 1s11 4.925 11 11-4.925 11-11 11S1 18.075 1 12"/>',
   plus:  '<path d="M11 7h2v4h4v2h-4v4h-2v-4H7v-2h4z"/>',
   check: '<path d="m10.9 16.2-3.6-3.6 1.4-1.4 2.2 2.2 4.4-4.4 1.4 1.4z"/>',
+  shuffle: '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="m15 15 6 6"/><path d="m4 4 5 5"/></g>',
   more:  '<path d="M4.5 13.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m15 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m-7.5 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3"/>',
   // Spotify has no rebuild icon; drawn at 2px stroke to match their weight.
   refresh: '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 12a8.4 8.4 0 1 1-2.46-5.94"/><path d="M20.9 4.2v4.4h-4.4"/></g>',
@@ -159,6 +160,8 @@ function MixPage({ mix }) {
   const total = tracks.reduce((a, t) => a + (Number(t.duration) || 0), 0);
   const [busy, setBusy] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+  const [shuffled, setShuffled] = useState(() => !!BM?.getShuffle?.());
+  const toggleShuffle = () => { const v = !shuffled; BM?.setShuffle?.(v); setShuffled(v); };
 
   const rebuild = async () => {
     if (!BM?.rebuildOne) return Spicetify.showNotification("Better Mix isn't loaded", true);
@@ -207,6 +210,7 @@ function MixPage({ mix }) {
       // web-page furniture next to their controls.
       h("div", { className: "bmx-actions" },
         h("button", { className: "bmx-playbtn", title: "Play", "aria-label": "Play", onClick: () => play(0) }, sicon("play")),
+        iconBtn("shuffle", shuffled ? "Disable shuffle" : "Enable shuffle", toggleShuffle, shuffled ? "bmx-on" : ""),
         iconBtn(mix.savedUri ? ["ring", "check"] : ["ring", "plus"],
           mix.savedUri ? "Open the saved playlist" : "Save as a playlist",
           save, mix.savedUri ? "bmx-on" : "", busy),
