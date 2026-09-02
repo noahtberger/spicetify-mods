@@ -272,7 +272,8 @@ function MixPage({ mix }) {
           mix.savedUri ? "Open the saved playlist" : "Save as a playlist",
           save, mix.savedUri ? "bmx-on" : "", busy),
         iconBtn("refresh", rebuilding ? "Rebuilding…" : "Rebuild this mix", rebuild, rebuilding ? "bmx-spin" : "", rebuilding),
-        iconBtn("more", "Settings", () => BM?.open?.()),
+        // No settings button: mixes build themselves on a schedule and aren't
+        // meant to be tuned per-mix. Rebuild is the only manual control.
 
         // Search and sort sit right of the row, as they do on a playlist page.
         h("div", { className: "bmx-actions-right" },
