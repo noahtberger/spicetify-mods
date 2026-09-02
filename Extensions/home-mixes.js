@@ -77,7 +77,9 @@
   // With "Mix" in the name that's a precise test for Daily Mix, Driving Mix,
   // Chill Happy Mix -- without catching your own playlists that say "mix".
   const MIX_ID = /^37i9dQZF1E/;
-  const isMix = (name, id) => MIX_ID.test(id) && /\bmix\b/i.test(name);
+  // Must END with "Mix": song-radio playlists share the id prefix and can
+  // carry "Mix" mid-name ("… DJ Gius Mix, Radio Edit Radio").
+  const isMix = (name, id) => MIX_ID.test(id) && /\bmix\s*$/i.test(String(name).trim());
 
   // Shelves to hide by heading, beyond the auto-detected mix rows. These are
   // Spotify's promotional picks -- a single album pushed at you -- not mixes.
