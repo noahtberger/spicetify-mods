@@ -13,16 +13,29 @@ rows used to be. Nothing is saved to your library unless you press save.
 
 ## Install
 
-Marketplace installs the app. Then, once:
+Marketplace lists custom apps but doesn't install them -- a custom app needs
+`spicetify apply`, which Marketplace can't run. So it's a one-time manual
+step. The folder name must be exactly `better-mix`; it's also the app's route.
 
-```
+```bash
+git clone https://github.com/noahtberger/spicetify-mods.git
+cp -r spicetify-mods/CustomApps/better-mix "$(spicetify path userdata)/CustomApps/better-mix"
 spicetify config custom_apps better-mix
 spicetify apply
 ```
 
-Open Home once so it can see your Spotify mixes. The first run builds them in
-the background -- a few minutes -- and a counter on the Home rows shows it
-working.
+(No git? Download the repo as a zip from GitHub and copy the
+`CustomApps/better-mix` folder to the same place: `~/.config/spicetify/CustomApps/`
+on macOS and Linux, `%APPDATA%\spicetify\CustomApps\` on Windows.)
+
+That one folder carries everything: the sidebar page and the two extensions
+that build the mixes and replace the Home rows. Nothing else to install.
+
+Then open Home once so it can see your Spotify mixes. The first run builds
+them in the background -- a few minutes -- and a counter on the Home rows
+shows it working. After that it refreshes itself daily.
+
+To update later: pull the repo, copy the folder again, `spicetify apply`.
 
 ## Using it
 
