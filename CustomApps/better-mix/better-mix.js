@@ -355,6 +355,12 @@ window.__betterMixExtensionLoaded = true;
   // Built mixes live here, in this client's storage, NOT as Spotify playlists.
   // home-mixes.js draws its row from this and plays straight from it. Nothing
   // reaches your library unless you save one. This file is the only writer.
+  // One rebuild at a time, held by rebuildThese so it covers the manual button
+  // as well as the automatic runs. Before, only the automatic path took it, so
+  // pressing Rebuild while a scheduled build ran gave two runs sharing one
+  // progress counter ("120 of 87") -- and two snapshots of the store written
+  // back over each other, losing mixes.
+  let building = false;
   const VIRT_KEY = "better-mix:virtual";
   const readVirtual = () => { try { return JSON.parse(localStorage.getItem(VIRT_KEY)) || []; } catch { return []; } };
   const writeVirtual = (list) => {
@@ -458,6 +464,9 @@ window.__betterMixExtensionLoaded = true;
   const fmtSecs = (ms) => { const x = Math.round(ms / 1000); return x >= 60 ? `${Math.floor(x / 60)}m ${x % 60}s` : `${x}s`; };
 
   async function rebuildThese(mixes, { total, familiarCount, maxPerArtist }, { concurrency = 1 } = {}) {
+    if (building) throw new Error("A rebuild is already running — let it finish.");
+    building = true;
+    try {
     const store = readVirtual();
     // Seeded from the mixes that already exist, so rebuilding a few spreads
     // away from the rest rather than re-concentrating on the same songs.
@@ -514,6 +523,10 @@ window.__betterMixExtensionLoaded = true;
     progress = { active: false, done: mixes.length, total: mixes.length, current: [] }; emitProgress();
     logLine(`\ndone: ${done.length}/${mixes.length} mixes in ${fmtSecs(Date.now() - t0)}`);
     return done;
+    } finally {
+      building = false;
+      progress = { ...progress, active: false }; emitProgress();   // never leave the counter spinning
+    }
   }
 
   // "Rebuild all": the mixes on your Home page first, then everything else
@@ -555,7 +568,6 @@ window.__betterMixExtensionLoaded = true;
   // Bump when the selection rules change. Mixes built under older rules get
   // rebuilt automatically at the next startup instead of waiting a day.
   const RULES_VERSION = 4;
-  let building = false;
   const readCurrent = () => { try { return JSON.parse(localStorage.getItem(CUR_KEY)) || []; } catch { return []; } };
 
   // Keep the store bounded. It was 1.5 MB at 78 mixes and grew with every
@@ -606,14 +618,13 @@ window.__betterMixExtensionLoaded = true;
     const dueWeekly = rest.filter((m) => { const e = entry(m); return !e || e.rules !== RULES_VERSION || Date.now() - Date.parse(e.builtAt || 0) > WEEK; });
     const due = [...dueDaily, ...dueWeekly];
     if (!due.length) return;
-    building = true;
     console.log(`[better-mix] auto-building ${due.length} mixes (${dueDaily.length} daily-tier, ${dueWeekly.length} weekly-tier) — ${reason}: ${due.map((m) => m.name).join(", ")}`);
     Spicetify.showNotification(`Building today's mixes (${due.length}) — a few minutes in the background`);
     const prevLog = logLine;
     logLine = (m) => console.log("[better-mix]", m);
     try { await rebuildThese(due, settings(), { concurrency: 2 }); Spicetify.showNotification("Today's mixes are ready"); }
     catch (e) { console.warn("[better-mix] auto-build failed:", e); }
-    finally { logLine = prevLog; building = false; pruneStore("after build"); }
+    finally { logLine = prevLog; pruneStore("after build"); }
   }
   window.addEventListener("home-mixes:current", () => autoBuild("Home changed"));
   setInterval(() => autoBuild("daily refresh"), 60 * 60 * 1000);
@@ -687,7 +698,7 @@ window.__betterMixExtensionLoaded = true;
           Spicetify.showNotification("Better Mix created");
         }
       } catch (e) {
-        logLine("\nFAILED: " + (e?.message || e));
+        logLine("\n" + (e?.message || e));
       } finally {
         wrap.querySelectorAll("button").forEach((b) => (b.disabled = false));
       }
@@ -709,7 +720,7 @@ window.__betterMixExtensionLoaded = true;
         logLine(`\ndone — ${made.length} mixes built. They're on your Home page; nothing was saved to your library.`);
         Spicetify.showNotification(`Built ${made.length} mixes`);
       } catch (e) {
-        logLine("\nFAILED: " + (e?.message || e));
+        logLine("\n" + (e?.message || e));
       } finally {
         wrap.querySelectorAll("button").forEach((b) => (b.disabled = false));
       }
