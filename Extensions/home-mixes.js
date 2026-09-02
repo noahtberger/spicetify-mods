@@ -413,13 +413,21 @@
   // --- Styles ------------------------------------------------------------------
   const css = document.createElement("style");
   css.textContent = `
-    .hmx-row { padding: 8px 0 24px; }
+    /* Contain the row to the page width, then let the strip scroll sideways
+       like Spotify's shelves. Without min-width:0 / max-width:100% the strip
+       grows to fit every card and sticks out past the edge of the page. */
+    .hmx-row { padding: 8px 0 24px; min-width: 0; max-width: 100%; box-sizing: border-box; overflow: hidden; }
     .hmx-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
     .hmx-heading { font-size: 24px; font-weight: 700; margin: 0; color: var(--spice-text, #fff); }
     .hmx-progress { font-size: 13px; color: var(--spice-subtext, #b3b3b3); }
     .hmx-rebuild { margin-left: 18px; background: transparent; border: 0; color: var(--spice-subtext, #b3b3b3); font-size: 14px; font-weight: 700; cursor: pointer; }
     .hmx-rebuild:hover { color: var(--spice-text, #fff); text-decoration: underline; }
-    .hmx-strip { display: flex; gap: 18px; overflow-x: auto; padding-bottom: 6px; }
+    .hmx-strip { display: flex; gap: 18px; min-width: 0; width: 100%; overflow-x: auto; overflow-y: hidden;
+                 padding-bottom: 8px; scroll-snap-type: x proximity; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent; }
+    .hmx-strip::-webkit-scrollbar { height: 6px; }
+    .hmx-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 3px; }
+    .hmx-strip::-webkit-scrollbar-track { background: transparent; }
+    .hmx-card { scroll-snap-align: start; }
     .hmx-card { width: 180px; flex: 0 0 auto; border-radius: 8px; padding: 12px; background: var(--spice-card, #181818); transition: background-color 150ms ease; }
     .hmx-card:hover { background: var(--spice-highlight, #282828); }
     .hmx-card.hmx-busy { opacity: .6; pointer-events: none; }
