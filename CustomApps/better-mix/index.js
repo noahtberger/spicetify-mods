@@ -43,6 +43,22 @@ const ago = (iso) => {
   const h = Math.round(m / 60); if (h < 48) return `${h} h ago`;
   return `${Math.round(h / 24)} days ago`;
 };
+// Spotify's own action-bar icons, taken from a real playlist page. Same 24px
+// viewBox and artwork as their controls, so these render at identical weight
+// instead of being 16px glyphs scaled up (which fattened every stroke).
+const ICONS = {
+  play:  '<path d="m7.05 3.606 13.49 7.788a.7.7 0 0 1 0 1.212L7.05 20.394A.7.7 0 0 1 6 19.788V4.212a.7.7 0 0 1 1.05-.606"/>',
+  // Spotify's download ring, reused as the circle for save / saved.
+  ring:  '<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M1 12C1 5.925 5.925 1 12 1s11 4.925 11 11-4.925 11-11 11S1 18.075 1 12"/>',
+  plus:  '<path d="M11 7h2v4h4v2h-4v4h-2v-4H7v-2h4z"/>',
+  check: '<path d="m10.9 16.2-3.6-3.6 1.4-1.4 2.2 2.2 4.4-4.4 1.4 1.4z"/>',
+  more:  '<path d="M4.5 13.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m15 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m-7.5 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3"/>',
+  // Spotify has no rebuild icon; drawn at 2px stroke to match their weight.
+  refresh: '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 12a8.4 8.4 0 1 1-2.46-5.94"/><path d="M20.9 4.2v4.4h-4.4"/></g>',
+};
+const sicon = (...names) =>
+  h("span", { className: "bmx-svg", dangerouslySetInnerHTML: { __html: `<svg viewBox="0 0 24 24" fill="currentColor">${names.map((n) => ICONS[n]).join("")}</svg>` } });
+
 const icon = (name, cls = "bmx-svg") =>
   h("span", { className: cls, dangerouslySetInnerHTML: { __html: `<svg viewBox="0 0 16 16" fill="currentColor">${Spicetify.SVGIcons[name] || ""}</svg>` } });
 
@@ -168,8 +184,9 @@ function MixPage({ mix }) {
     h("a", { className: "bmx-a", onClick: (e) => { e.stopPropagation(); go(path); } }, label);
 
   const accent = useAccent(mix);
-  const iconBtn = (name, title, onClick, extra = "") =>
-    h("button", { className: "bmx-iconbtn " + extra, title, "aria-label": title, onClick }, icon(name));
+  const iconBtn = (glyphs, title, onClick, extra = "", disabled = false) =>
+    h("button", { className: "bmx-iconbtn " + extra, title, "aria-label": title, onClick, disabled },
+      sicon(...(Array.isArray(glyphs) ? glyphs : [glyphs])));
 
   return h("div", { className: "bmx-page" },
     h(Progress),
@@ -189,14 +206,11 @@ function MixPage({ mix }) {
       // Icon buttons with tooltips, like Spotify's -- text links read as
       // web-page furniture next to their controls.
       h("div", { className: "bmx-actions" },
-        h("button", { className: "bmx-playbtn", title: "Play", "aria-label": "Play", onClick: () => play(0) }, icon("play")),
-        h("button", {
-          className: "bmx-iconbtn" + (mix.savedUri ? " bmx-on" : ""),
-          title: mix.savedUri ? "Open the saved playlist" : "Save as a playlist",
-          "aria-label": mix.savedUri ? "Open the saved playlist" : "Save as a playlist",
-          disabled: busy, onClick: save,
-        }, icon(mix.savedUri ? "check-alt-fill" : "plus-alt")),
-        iconBtn("repeat", rebuilding ? "Rebuilding…" : "Rebuild this mix", rebuild, rebuilding ? "bmx-spin" : ""),
+        h("button", { className: "bmx-playbtn", title: "Play", "aria-label": "Play", onClick: () => play(0) }, sicon("play")),
+        iconBtn(mix.savedUri ? ["ring", "check"] : ["ring", "plus"],
+          mix.savedUri ? "Open the saved playlist" : "Save as a playlist",
+          save, mix.savedUri ? "bmx-on" : "", busy),
+        iconBtn("refresh", rebuilding ? "Rebuilding…" : "Rebuild this mix", rebuild, rebuilding ? "bmx-spin" : "", rebuilding),
         iconBtn("more", "Settings", () => BM?.open?.()))),
 
     h("div", { className: "bmx-table" },
