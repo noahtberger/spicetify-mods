@@ -170,6 +170,33 @@ function Index({ store }) {
 
 function MixPage({ mix }) {
   const BM = window.BetterMix;
+
+  // Sort, view and the search query, persisted like Spotify's are. "Custom
+  // order" is the mix's own order, which is meaningful here: popularity-ranked
+  // with the familiar tracks spliced through it.
+  const SORTS = [
+    ["custom", "Custom order"], ["title", "Title"], ["artist", "Artist"],
+    ["album", "Album"], ["popularity", "Popularity"], ["duration", "Duration"],
+  ];
+  const [sort, setSort] = useState(() => localStorage.getItem("better-mix:sort") || "custom");
+  const [view, setView] = useState(() => localStorage.getItem("better-mix:view") || "list");
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const pick = (setter, key) => (v) => { setter(v); try { localStorage.setItem(key, v); } catch {} };
+  const chooseSort = pick(setSort, "better-mix:sort");
+  const chooseView = pick(setView, "better-mix:view");
+
+  // Close the menu on an outside click or Escape, the way a real one behaves.
+  useEffect(() => {
+    if (!menu) return;
+    const off = (e) => { if (!e.target.closest?.(".bmx-sortwrap")) setMenu(false); };
+    const esc = (e) => e.key === "Escape" && setMenu(false);
+    document.addEventListener("mousedown", off);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", off); document.removeEventListener("keydown", esc); };
+  }, [menu]);
+
   const all = mix.tracks || [];
   const q = query.trim().toLowerCase();
   const cmp = {
@@ -217,31 +244,6 @@ function MixPage({ mix }) {
 
   const accent = useAccent(mix);
 
-  // Sort, view and the search query, persisted like Spotify's are. "Custom
-  // order" is the mix's own order, which is meaningful here: popularity-ranked
-  // with the familiar tracks spliced through it.
-  const SORTS = [
-    ["custom", "Custom order"], ["title", "Title"], ["artist", "Artist"],
-    ["album", "Album"], ["popularity", "Popularity"], ["duration", "Duration"],
-  ];
-  const [sort, setSort] = useState(() => localStorage.getItem("better-mix:sort") || "custom");
-  const [view, setView] = useState(() => localStorage.getItem("better-mix:view") || "list");
-  const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [menu, setMenu] = useState(false);
-  const pick = (setter, key) => (v) => { setter(v); try { localStorage.setItem(key, v); } catch {} };
-  const chooseSort = pick(setSort, "better-mix:sort");
-  const chooseView = pick(setView, "better-mix:view");
-
-  // Close the menu on an outside click or Escape, the way a real one behaves.
-  useEffect(() => {
-    if (!menu) return;
-    const off = (e) => { if (!e.target.closest?.(".bmx-sortwrap")) setMenu(false); };
-    const esc = (e) => e.key === "Escape" && setMenu(false);
-    document.addEventListener("mousedown", off);
-    document.addEventListener("keydown", esc);
-    return () => { document.removeEventListener("mousedown", off); document.removeEventListener("keydown", esc); };
-  }, [menu]);
   const iconBtn = (glyphs, title, onClick, extra = "", disabled = false) =>
     h("button", { className: "bmx-iconbtn " + extra, title, "aria-label": title, onClick, disabled },
       sicon(...(Array.isArray(glyphs) ? glyphs : [glyphs])));
