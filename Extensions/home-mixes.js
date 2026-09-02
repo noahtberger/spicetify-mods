@@ -148,24 +148,12 @@
   // the two extensions can never disagree about what's in it.
   const readVirtual = () => { try { return JSON.parse(localStorage.getItem(VIRT_KEY)) || []; } catch { return []; } };
 
-  async function playMix(mix, startAt = 0) {
-    const uris = (mix.tracks || []).map((t) => t.uri).filter(Boolean).slice(startAt);
-    if (!uris.length) return;
-    const PA = Spicetify.Platform.PlayerAPI;
-    // Play the first track directly, queue the rest behind it. No playlist
-    // needed -- the queue is the whole mechanism.
-    try { await PA.clearQueue?.(); } catch {}
-    await Spicetify.Player.playUri(uris[0]);
-    const rest = uris.slice(1).map((uri) => ({ uri }));
-    if (rest.length) {
-      try { await PA.addToQueue(rest); }
-      catch (e) {
-        try { await Spicetify.addToQueue?.(rest); }
-        catch (e2) { console.warn("[home-mixes] couldn't queue the rest:", e2); }
-      }
-    }
-    Spicetify.showNotification(`Playing ${mix.name}`);
-  }
+  // Playback and the page both live in better-mix; this row only points at them.
+  const playMix = (mix, startAt = 0) =>
+    window.BetterMix?.play ? window.BetterMix.play(mix, startAt)
+                           : Spicetify.showNotification("Better Mix isn't loaded", true);
+  const openMix = (mix) =>
+    Spicetify.Platform.History.push({ pathname: "/better-mix", search: `?id=${mix.id}`, state: { id: mix.id } });
 
   const openPlaylist = (uri) =>
     Spicetify.Platform.History.push(`/playlist/${String(uri).split(":").pop()}`);
@@ -186,45 +174,6 @@
 
   const icon = (name) =>
     `<svg viewBox="0 0 16 16" fill="currentColor">${Spicetify.SVGIcons[name] || ""}</svg>`;
-
-  // A virtual mix has no playlist page, so this is its page: the tracklist,
-  // play-from-here on each row, and save. Clicking a card opens this; the
-  // hover play button on the card still plays immediately.
-  function openMixModal(mix) {
-    const wrap = document.createElement("div");
-    wrap.className = "hmx-modal";
-    const saved = !!mix.savedUri;
-    wrap.innerHTML = `
-      <div class="hmx-m-head">
-        <button class="hmx-m-play">${icon("play")}<span>Play</span></button>
-        <span class="hmx-m-count">${(mix.tracks || []).length} songs · built from ${esc(mix.sourceName || "a Spotify mix")}</span>
-        <button class="hmx-m-save">${saved ? "Open playlist" : "Save as playlist"}</button>
-      </div>
-      <ol class="hmx-list">
-        ${(mix.tracks || []).map((t, i) => `
-          <li class="hmx-row" data-i="${i}" title="Play from here">
-            <span class="hmx-n">${i + 1}</span>
-            ${t.image ? `<img class="hmx-thumb" src="${esc(t.image)}" alt="">` : `<span class="hmx-thumb"></span>`}
-            <span class="hmx-t">
-              <span class="hmx-tn">${esc(t.name)}</span>
-              <span class="hmx-ta">${esc((t.artists || []).map((a) => a.name).join(", "))}</span>
-            </span>
-            <span class="hmx-pop" title="popularity">${t.popularity ?? ""}</span>
-          </li>`).join("")}
-      </ol>`;
-
-    Spicetify.PopupModal.display({ title: mix.name, content: wrap, isLarge: true });
-
-    wrap.querySelector(".hmx-m-play").onclick = () => { Spicetify.PopupModal.hide(); playMix(mix); };
-    wrap.querySelectorAll(".hmx-row").forEach((li) => {
-      li.onclick = () => { Spicetify.PopupModal.hide(); playMix(mix, +li.dataset.i); };
-    });
-    wrap.querySelector(".hmx-m-save").onclick = async () => {
-      if (mix.savedUri) { Spicetify.PopupModal.hide(); return openPlaylist(mix.savedUri); }
-      await saveMix(mix, wrap);
-      Spicetify.PopupModal.hide();
-    };
-  }
 
   function card(mix) {
     const el = document.createElement("div");
@@ -247,8 +196,8 @@
         <button class="hmx-save" title="${saved ? "Open the saved playlist" : "Save as a real playlist"}">${saved ? "open" : "save"}</button>
       </div>`;
 
-    el.querySelector(".hmx-art").onclick = () => openMixModal(mix);
-    el.querySelector(".hmx-name").onclick = () => openMixModal(mix);
+    el.querySelector(".hmx-art").onclick = () => openMix(mix);
+    el.querySelector(".hmx-name").onclick = () => openMix(mix);
     el.querySelector(".hmx-play").onclick = (e) => { e.stopPropagation(); playMix(mix); };
     el.querySelector(".hmx-save").onclick = (e) => {
       e.stopPropagation();
@@ -297,10 +246,11 @@
     row.innerHTML = `
       <div class="hmx-head">
         <h2 class="hmx-heading">Your mixes</h2>
-        <button class="hmx-rebuild">Rebuild</button>
+        <span><button class="hmx-rebuild" id="hmx-showall">Show all</button><button class="hmx-rebuild">Rebuild</button></span>
       </div>
       <div class="hmx-strip"></div>`;
-    row.querySelector(".hmx-rebuild").onclick = () =>
+    row.querySelector("#hmx-showall").onclick = () => Spicetify.Platform.History.push("/better-mix");
+    row.querySelector(".hmx-rebuild:not(#hmx-showall)").onclick = () =>
       window.BetterMix?.open ? window.BetterMix.open() : Spicetify.showNotification("Better Mix isn't loaded", true);
     const strip = row.querySelector(".hmx-strip");
     mixes.forEach((m) => strip.appendChild(card(m)));
@@ -331,7 +281,7 @@
     #${ROW_ID} { padding: 8px 0 24px; }
     .hmx-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
     .hmx-heading { font-size: 24px; font-weight: 700; margin: 0; color: var(--spice-text, #fff); }
-    .hmx-rebuild { background: transparent; border: 0; color: var(--spice-subtext, #b3b3b3); font-size: 14px; font-weight: 700; cursor: pointer; }
+    .hmx-rebuild { margin-left: 18px; background: transparent; border: 0; color: var(--spice-subtext, #b3b3b3); font-size: 14px; font-weight: 700; cursor: pointer; }
     .hmx-rebuild:hover { color: var(--spice-text, #fff); text-decoration: underline; }
     .hmx-strip { display: flex; gap: 18px; overflow-x: auto; padding-bottom: 6px; }
     .hmx-card { width: 180px; flex: 0 0 auto; border-radius: 8px; padding: 12px; background: var(--spice-card, #181818); transition: background-color 150ms ease; }
@@ -350,31 +300,6 @@
     .hmx-name { margin-top: 12px; font-size: 14px; font-weight: 700; color: var(--spice-text, #fff); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
     .hmx-name:hover { text-decoration: underline; }
 
-    /* --- tracklist modal. Title is the mix name, so scope by content. --- */
-    .GenericModal:has(.hmx-modal) { width: min(720px, 94vw); }
-    .GenericModal:has(.hmx-modal) .main-trackCreditsModal-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:20px 24px 10px; }
-    .GenericModal:has(.hmx-modal) .main-trackCreditsModal-header h1 { margin:0; font-size:20px; font-weight:700; }
-    .GenericModal:has(.hmx-modal) .main-trackCreditsModal-closeBtn { flex:0 0 32px; width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; margin:0; padding:0; border:0; border-radius:50%; background:transparent; color:var(--spice-subtext,#b3b3b3); cursor:pointer; }
-    .GenericModal:has(.hmx-modal) .main-trackCreditsModal-closeBtn:hover { background:rgba(255,255,255,.1); color:var(--spice-text,#fff); }
-    .GenericModal:has(.hmx-modal) .main-trackCreditsModal-closeBtn svg { display:block; width:14px; height:14px; }
-    .GenericModal:has(.hmx-modal) .main-trackCreditsModal-originalCredits { padding:6px 24px 24px; }
-    .hmx-m-head { display:flex; align-items:center; gap:14px; margin-bottom:14px; }
-    .hmx-m-play { display:inline-flex; align-items:center; gap:8px; padding:10px 18px; border-radius:22px; border:0; cursor:pointer; font-weight:700; font-size:14px;
-                  background:var(--spice-button,#1ed760); color:var(--spice-main,#121212); }
-    .hmx-m-play svg { width:16px; height:16px; }
-    .hmx-m-play:hover { transform:scale(1.04); }
-    .hmx-m-count { flex:1; font-size:13px; color:var(--spice-subtext,#b3b3b3); }
-    .hmx-m-save { padding:8px 14px; border-radius:18px; border:1px solid var(--spice-misc,#555); background:transparent; color:var(--spice-text,#fff); font-size:13px; font-weight:700; cursor:pointer; }
-    .hmx-m-save:hover { border-color:var(--spice-button,#1ed760); }
-    .hmx-list { list-style:none; margin:0; padding:0; max-height:52vh; overflow:auto; }
-    .hmx-row { display:grid; grid-template-columns:28px 40px 1fr 36px; align-items:center; gap:12px; padding:6px 8px; border-radius:6px; cursor:pointer; }
-    .hmx-row:hover { background:rgba(255,255,255,.07); }
-    .hmx-n { font-size:13px; color:var(--spice-subtext,#b3b3b3); text-align:right; }
-    .hmx-thumb { width:40px; height:40px; border-radius:4px; object-fit:cover; background:var(--spice-misc,#333); display:block; }
-    .hmx-t { display:flex; flex-direction:column; min-width:0; }
-    .hmx-tn { font-size:14px; color:var(--spice-text,#fff); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .hmx-ta { font-size:12px; color:var(--spice-subtext,#b3b3b3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .hmx-pop { font-size:12px; color:var(--spice-subtext,#b3b3b3); text-align:right; }
     .hmx-meta { margin-top: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--spice-subtext, #b3b3b3); }
     .hmx-save { background: transparent; border: 1px solid var(--spice-misc, #555); color: var(--spice-subtext, #b3b3b3); border-radius: 12px; padding: 2px 10px; font-size: 11px; font-weight: 700; cursor: pointer; }
     .hmx-save:hover { border-color: var(--spice-button, #1ed760); color: var(--spice-text, #fff); }

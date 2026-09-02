@@ -1,0 +1,71 @@
+/* Better Mix — laid out to match Spotify's own playlist page, on theme vars. */
+.bmx-page { padding: 0 24px 40px; color: var(--spice-text, #fff); }
+.bmx-a { color: inherit; cursor: pointer; }
+.bmx-a:hover { text-decoration: underline; color: var(--spice-text, #fff); }
+.bmx-svg { display: inline-flex; }
+.bmx-svg svg { width: 1em; height: 1em; display: block; }
+
+/* --- covers --- */
+.bmx-cover { border-radius: 4px; overflow: hidden; background: var(--spice-main, #121212); object-fit: cover; display: block; }
+.bmx-mosaic { display: grid; grid-template-columns: 1fr 1fr; }
+.bmx-mosaic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bmx-fallback { display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 48px;
+                color: var(--spice-main, #121212); background: linear-gradient(135deg, var(--spice-button, #1ed760), var(--spice-button-active, #1db954)); }
+
+/* --- hero (playlist header) --- */
+.bmx-hero { display: flex; align-items: flex-end; gap: 24px; padding: 40px 0 24px; margin: 0 -24px; padding-left: 24px; padding-right: 24px;
+            background: linear-gradient(to bottom, var(--spice-card, #282828), transparent); }
+.bmx-hero-cover { width: 232px; height: 232px; flex: 0 0 232px; box-shadow: 0 4px 60px rgba(0,0,0,.5); }
+.bmx-hero-text { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.bmx-eyebrow { font-size: 14px; font-weight: 700; }
+.bmx-title { margin: 0; font-weight: 900; line-height: 1.05; letter-spacing: -0.04em;
+             font-size: clamp(32px, 6vw, 72px); overflow-wrap: anywhere; }
+.bmx-desc { margin: 4px 0 0; color: var(--spice-subtext, #b3b3b3); font-size: 14px; }
+.bmx-stats { font-size: 14px; color: var(--spice-subtext, #b3b3b3); }
+.bmx-stats b { color: var(--spice-text, #fff); }
+
+/* --- action row --- */
+.bmx-actions { display: flex; align-items: center; gap: 24px; padding: 24px 0 16px; }
+.bmx-playbtn { width: 56px; height: 56px; border-radius: 50%; border: 0; cursor: pointer; font-size: 24px;
+               background: var(--spice-button, #1ed760); color: var(--spice-main, #121212);
+               display: flex; align-items: center; justify-content: center; transition: transform 100ms ease; }
+.bmx-playbtn .bmx-svg svg { margin-left: 3px; }
+.bmx-playbtn:hover { transform: scale(1.05); }
+.bmx-pill { padding: 8px 16px; border-radius: 20px; border: 1px solid var(--spice-misc, #555); background: transparent;
+            color: var(--spice-text, #fff); font-size: 14px; font-weight: 700; cursor: pointer; }
+.bmx-pill:hover:not(:disabled) { border-color: var(--spice-text, #fff); transform: scale(1.03); }
+.bmx-pill:disabled { opacity: .5; cursor: default; }
+.bmx-textbtn { background: transparent; border: 0; color: var(--spice-subtext, #b3b3b3); font-size: 14px; font-weight: 700; cursor: pointer; }
+.bmx-textbtn:hover { color: var(--spice-text, #fff); }
+
+/* --- track table --- */
+.bmx-table { display: flex; flex-direction: column; }
+.bmx-thead, .bmx-tr { display: grid; grid-template-columns: 40px minmax(0, 6fr) minmax(0, 4fr) 60px; align-items: center; gap: 16px; padding: 0 16px; }
+.bmx-thead { height: 36px; border-bottom: 1px solid rgba(255,255,255,.1); margin-bottom: 16px;
+             font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--spice-subtext, #b3b3b3); }
+.bmx-thead > :first-child, .bmx-num { text-align: right; }
+.bmx-clock { justify-self: end; font-size: 16px; }
+.bmx-tr { height: 56px; border-radius: 4px; cursor: pointer; }
+.bmx-tr:hover { background: rgba(255,255,255,.1); }
+.bmx-num { position: relative; font-size: 16px; color: var(--spice-subtext, #b3b3b3); }
+.bmx-rowplay { position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none; color: var(--spice-text, #fff); font-size: 16px; }
+.bmx-tr:hover .bmx-idx { visibility: hidden; }
+.bmx-tr:hover .bmx-rowplay { display: inline-flex; }
+.bmx-titlecell { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.bmx-thumb { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; flex: 0 0 40px; background: var(--spice-misc, #333); display: block; }
+.bmx-tt { display: flex; flex-direction: column; min-width: 0; }
+.bmx-tname { font-size: 16px; color: var(--spice-text, #fff); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bmx-tartists, .bmx-album { font-size: 14px; color: var(--spice-subtext, #b3b3b3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bmx-tr:hover .bmx-tartists, .bmx-tr:hover .bmx-album { color: var(--spice-text, #fff); }
+.bmx-dur { font-size: 14px; color: var(--spice-subtext, #b3b3b3); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* --- index (all mixes) --- */
+.bmx-index-head { display: flex; align-items: center; justify-content: space-between; padding: 32px 0 20px; }
+.bmx-index-head h1 { margin: 0; font-size: 32px; font-weight: 700; }
+.bmx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 24px; }
+.bmx-card { padding: 16px; border-radius: 8px; background: var(--spice-card, #181818); cursor: pointer; transition: background-color 150ms ease; }
+.bmx-card:hover { background: var(--spice-highlight, #282828); }
+.bmx-card-cover { width: 100%; aspect-ratio: 1; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+.bmx-card-name { margin-top: 16px; font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bmx-card-sub { margin-top: 4px; font-size: 14px; color: var(--spice-subtext, #b3b3b3); }
+.bmx-empty { color: var(--spice-subtext, #b3b3b3); }

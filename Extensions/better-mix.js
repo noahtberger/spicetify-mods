@@ -185,10 +185,32 @@
   // localStorage for no benefit.
   const slim = (t) => ({
     uri: t.uri, name: t.name,
-    artists: (t.artists || []).map((a) => ({ name: a.name })),
+    duration: t.duration ?? null,                                   // for the page's clock column
+    artists: (t.artists || []).map((a) => ({ name: a.name, uri: a.uri || null })),
+    album: { name: t.album?.name || "", uri: t.album?.uri || null },
     image: t.album?.imageUrl || t.album?.largeImageUrl || null,
     popularity: t.popularity ?? null,
   });
+
+  // Play a virtual mix: first track directly, the rest queued behind it.
+  // No playlist involved -- the queue IS the mechanism. Lives here so the
+  // Home row and the app page share one implementation.
+  async function play(mix, startAt = 0) {
+    const uris = (mix?.tracks || []).map((t) => t.uri).filter(Boolean).slice(startAt);
+    if (!uris.length) return;
+    const PA = P().PlayerAPI;
+    try { await PA.clearQueue?.(); } catch {}
+    await Spicetify.Player.playUri(uris[0]);
+    const rest = uris.slice(1).map((uri) => ({ uri }));
+    if (rest.length) {
+      try { await PA.addToQueue(rest); }
+      catch (e) {
+        try { await Spicetify.addToQueue?.(rest); }
+        catch (e2) { console.warn("[better-mix] couldn't queue the rest:", e2); }
+      }
+    }
+    Spicetify.showNotification(`Playing ${mix.name}`);
+  }
 
   // Spotify already sorts these by mood and activity -- Chill Happy, Driving,
   // Melancholy. Reusing their grouping is far better than trying to cluster
@@ -360,7 +382,7 @@
   ).register();
 
   // Shared surface for home-mixes.js (and for poking at from the console).
-  window.BetterMix = { open: () => openMenu(), rebuildAll, saveVirtual, virtual: readVirtual };
+  window.BetterMix = { open: () => openMenu(), rebuildAll, saveVirtual, play, virtual: readVirtual };
 
   console.log(`[better-mix] loaded — ${readVirtual().length} mixes in store`);
 })();
