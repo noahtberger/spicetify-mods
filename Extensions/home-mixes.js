@@ -77,9 +77,10 @@
   // With "Mix" in the name that's a precise test for Daily Mix, Driving Mix,
   // Chill Happy Mix -- without catching your own playlists that say "mix".
   const MIX_ID = /^37i9dQZF1E/;
-  // Must END with "Mix": song-radio playlists share the id prefix and can
-  // carry "Mix" mid-name ("… DJ Gius Mix, Radio Edit Radio").
-  const isMix = (name, id) => MIX_ID.test(id) && /\bmix\s*$/i.test(String(name).trim());
+  // Must END with "Mix" or "Mix <number>" ("Daily Mix 3"): song-radio
+  // playlists share the id prefix and can carry "Mix" mid-name
+  // ("… DJ Gius Mix, Radio Edit Radio").
+  const isMix = (name, id) => MIX_ID.test(id) && /\bmix(\s+\d+)?\s*$/i.test(String(name).trim());
 
   // Shelves to hide by heading, beyond the auto-detected mix rows. These are
   // Spotify's promotional picks -- a single album pushed at you -- not mixes.
@@ -111,20 +112,36 @@
   // ancestor and no image (a stray "Also try" link) isn't a card at all.
   const CARD_SEL = '.main-card-card, [data-testid*="card"], article, li';
   function mixesIn(shelf) {
-    const out = [];
-    const cards = new Set(), mixCards = new Set();
+    const links = [];
     shelf.querySelectorAll('a[href*="/playlist/"]').forEach((a) => {
       const id = a.getAttribute("href")?.split("/playlist/")[1]?.split(/[?#]/)[0];
       if (!id) return;
       const name = (a.getAttribute("aria-label") || a.title || a.textContent || "").trim();
-      const mix = !!name && isMix(name, id);
-      const card = a.closest(CARD_SEL);
-      if (!card && !mix && !a.querySelector("img")) return;   // stray text link
-      const key = card || a;
-      cards.add(key);
-      if (mix && !mixCards.has(key)) { mixCards.add(key); out.push({ uri: "spotify:playlist:" + id, name }); }
+      links.push({ a, id, name, mix: !!name && isMix(name, id), card: a.closest(CARD_SEL), img: !!a.querySelector("img") });
     });
-    out.links = cards.size;
+    const distinctMixIds = new Set(links.filter((l) => l.mix).map((l) => l.id));
+
+    // Group links by the card they sit in, so a mix card's "Also try pop,
+    // indie…" sub-links don't each count as a card of their own.
+    let cards = new Set(), mixCards = new Set();
+    for (const l of links) {
+      if (!l.card && !l.mix && !l.img) continue;      // stray text link
+      const key = l.card || l.a;
+      cards.add(key);
+      if (l.mix) mixCards.add(key);
+    }
+    // If several distinct mixes collapsed into one "card", the ancestor we
+    // matched was the shelf itself, not a card. Fall back to per-link
+    // counting, where only image links and mix links count as cards.
+    if (mixCards.size < Math.min(2, distinctMixIds.size)) {
+      cards = new Set(links.filter((l) => l.mix || l.img).map((l) => l.a));
+      mixCards = new Set(links.filter((l) => l.mix).map((l) => l.id));
+    }
+
+    const out = [];
+    const seenId = new Set();
+    for (const l of links) if (l.mix && !seenId.has(l.id)) { seenId.add(l.id); out.push({ uri: "spotify:playlist:" + l.id, name: l.name }); }
+    out.links = Math.max(cards.size, out.length);
     return out;
   }
 

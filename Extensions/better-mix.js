@@ -65,7 +65,7 @@
 
   // home-mixes.js records the Spotify mix shelves it hides. Reading them from
   // storage means this works anywhere, not just while Home is on screen.
-  const isMix = (x) => /^37i9dQZF1E/.test(String(x?.uri).split(":").pop()) && /\bmix\s*$/i.test(String(x?.name || "").trim());
+  const isMix = (x) => /^37i9dQZF1E/.test(String(x?.uri).split(":").pop()) && /\bmix(\s+\d+)?\s*$/i.test(String(x?.name || "").trim());
   const spotifyMixes = () => {
     try { return (JSON.parse(Spicetify.LocalStorage.get("home-mixes:sources")) || []).filter(isMix); }
     catch { return []; }
