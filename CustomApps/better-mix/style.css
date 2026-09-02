@@ -32,19 +32,21 @@
 .bmx-stats b { color: var(--spice-text, #fff); }
 
 /* --- action row --- */
-.bmx-actions { display: flex; align-items: center; gap: 20px; padding: 24px 0 24px; }
+.bmx-actions { display: flex; align-items: center; gap: 16px; padding: 24px 0 24px; }
 .bmx-actions .bmx-playbtn { margin-right: 4px; }
-/* Spotify's own 24-viewBox artwork at 32px, matching their action row. The
-   padding is built into the artwork, so the button needs none. */
+/* Spotify's 24-viewBox artwork rendered at 24px -- 1:1, so strokes land at
+   the weight they were drawn for. Anything larger scales the artwork up and
+   thickens every line, which is what made these read as heavier than the
+   real controls. The hit area stays 32px. */
 .bmx-iconbtn { width: 32px; height: 32px; padding: 0; border: 0; background: transparent; cursor: pointer;
-               display: flex; align-items: center; justify-content: center; font-size: 28px; line-height: 0;
+               display: flex; align-items: center; justify-content: center; font-size: 24px; line-height: 0;
                color: var(--spice-subtext, #b3b3b3); transition: color 120ms ease, transform 120ms ease; }
 .bmx-iconbtn:hover:not(:disabled) { color: var(--spice-text, #fff); transform: scale(1.06); }
 .bmx-iconbtn:disabled { opacity: .5; cursor: default; }
 /* Spotify marks an active toggle with the accent colour and a dot beneath. */
 .bmx-iconbtn .bmx-vb16 svg { width: .87em; height: .87em; }
 .bmx-iconbtn.bmx-on { color: var(--spice-button, #1ed760); position: relative; }
-.bmx-iconbtn.bmx-on::after { content: ""; position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%);
+.bmx-iconbtn.bmx-on::after { content: ""; position: absolute; bottom: -2px; left: 50%; transform: translateX(-50%);
                              width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
 .bmx-iconbtn.bmx-spin::after { display: none; }
 .bmx-iconbtn.bmx-spin { color: var(--spice-button, #1ed760); animation: bmx-spin 1.1s linear infinite; }

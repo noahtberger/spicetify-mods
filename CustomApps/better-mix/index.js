@@ -61,7 +61,7 @@ const ICONS = {
   compact: { vb: 16, p: '<path d="M1 2.5h14V4H1zm0 5.25h14v1.5H1zm0 5.25h14v1.5H1z"/>' },
   tick:   { vb: 16, p: '<path d="m6.5 12.6-4.1-4.1 1.1-1.1 3 3 6-6 1.1 1.1z"/>' },
   // Spotify has no rebuild icon; drawn at 2px stroke to match their weight.
-  refresh: { vb: 24, p: '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 12a8.4 8.4 0 1 1-2.46-5.94"/><path d="M20.9 4.2v4.4h-4.4"/></g>' },
+  refresh: { vb: 24, p: '<g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 12a8.4 8.4 0 1 1-2.46-5.94"/><path d="M20.9 4.2v4.4h-4.4"/></g>' },
 };
 // Composed glyphs share the first one's viewBox (ring+plus are both 24).
 // Icons drawn for a 16px box carry proportionally heavier strokes, so they
