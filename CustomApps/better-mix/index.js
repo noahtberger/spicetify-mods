@@ -83,6 +83,29 @@ function Cover({ mix, className = "" }) {
     (mix.name || "?").replace(/^better\s+/i, "").slice(0, 2).toUpperCase());
 }
 
+// Spotify tints a playlist page with a colour extracted from its cover.
+// colorExtractor hits the same internal endpoint their UI uses, so the tint
+// matches what Spotify would have picked. Keyed by track so navigating back
+// to a page doesn't refetch, and failure just leaves the default background.
+const accentCache = new Map();
+function useAccent(mix) {
+  const seed = (mix?.tracks || []).find((t) => t.uri)?.uri;
+  const [accent, setAccent] = useState(() => accentCache.get(seed) || null);
+  useEffect(() => {
+    if (!seed || accentCache.has(seed)) return;
+    let alive = true;
+    Spicetify.colorExtractor(seed)
+      .then((c) => {
+        // Preset names vary by client version; prefer the least garish.
+        const pick = c && (c.vibrantNonAlarming || c.desaturated || c.vibrant || c.prominent || Object.values(c)[0]);
+        if (pick) { accentCache.set(seed, pick); if (alive) setAccent(pick); }
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [seed]);
+  return accent;
+}
+
 function useProgress() {
   const [p, setP] = useState(() => window.BetterMix?.progress || { active: false });
   useEffect(() => {
@@ -144,24 +167,37 @@ function MixPage({ mix }) {
   const link = (label, path) =>
     h("a", { className: "bmx-a", onClick: (e) => { e.stopPropagation(); go(path); } }, label);
 
+  const accent = useAccent(mix);
+  const iconBtn = (name, title, onClick, extra = "") =>
+    h("button", { className: "bmx-iconbtn " + extra, title, "aria-label": title, onClick }, icon(name));
+
   return h("div", { className: "bmx-page" },
     h(Progress),
-    // Header: the same shape as a playlist page -- big cover, eyebrow, title,
-    // description, then "owner • N songs, duration".
-    h("header", { className: "bmx-hero" },
-      h(Cover, { mix, className: "bmx-hero-cover" }),
-      h("div", { className: "bmx-hero-text" },
-        h("span", { className: "bmx-eyebrow" }, "Better Mix"),
-        h("h1", { className: "bmx-title" }, mix.name),
-        h("p", { className: "bmx-desc" }, `Popular songs that fit ${mix.sourceName || "this mix"}, by artists you don't already play.`),
-        h("div", { className: "bmx-stats" },
-          h("b", null, "You"), ` • ${tracks.length} songs${total ? `, ${fmtTotal(total)}` : ""}${mix.builtAt ? ` • built ${ago(mix.builtAt)}` : ""}`))),
+    // Header and actions share one tinted panel, as they do on a real
+    // playlist page: the colour is strongest at the top and fades into the
+    // page background by the end of the action row.
+    h("div", { className: "bmx-top", style: accent ? { "--bmx-accent": accent } : undefined },
+      h("header", { className: "bmx-hero" },
+        h(Cover, { mix, className: "bmx-hero-cover" }),
+        h("div", { className: "bmx-hero-text" },
+          h("span", { className: "bmx-eyebrow" }, "Better Mix"),
+          h("h1", { className: "bmx-title" }, mix.name),
+          h("p", { className: "bmx-desc" }, `Popular songs that fit ${mix.sourceName || "this mix"}, by artists you don't already play.`),
+          h("div", { className: "bmx-stats" },
+            h("b", null, "You"), ` • ${tracks.length} songs${total ? `, ${fmtTotal(total)}` : ""}${mix.builtAt ? ` • built ${ago(mix.builtAt)}` : ""}`))),
 
-    h("div", { className: "bmx-actions" },
-      h("button", { className: "bmx-playbtn", title: "Play", onClick: () => play(0) }, icon("play")),
-      h("button", { className: "bmx-pill", disabled: busy, onClick: save }, mix.savedUri ? "Open playlist" : "Save as playlist"),
-      h("button", { className: "bmx-textbtn", disabled: rebuilding, onClick: rebuild }, rebuilding ? "Rebuilding…" : "Rebuild this mix"),
-      h("button", { className: "bmx-textbtn", onClick: () => BM?.open?.() }, "Settings")),
+      // Icon buttons with tooltips, like Spotify's -- text links read as
+      // web-page furniture next to their controls.
+      h("div", { className: "bmx-actions" },
+        h("button", { className: "bmx-playbtn", title: "Play", "aria-label": "Play", onClick: () => play(0) }, icon("play")),
+        h("button", {
+          className: "bmx-iconbtn" + (mix.savedUri ? " bmx-on" : ""),
+          title: mix.savedUri ? "Open the saved playlist" : "Save as a playlist",
+          "aria-label": mix.savedUri ? "Open the saved playlist" : "Save as a playlist",
+          disabled: busy, onClick: save,
+        }, icon(mix.savedUri ? "check-alt-fill" : "plus-alt")),
+        iconBtn("repeat", rebuilding ? "Rebuilding…" : "Rebuild this mix", rebuild, rebuilding ? "bmx-spin" : ""),
+        iconBtn("more", "Settings", () => BM?.open?.()))),
 
     h("div", { className: "bmx-table" },
       h("div", { className: "bmx-thead" },
