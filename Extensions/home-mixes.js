@@ -307,7 +307,7 @@
     return false;
   }
 
-  const OTHER_ROW_CAP = 16;   // cards in the "Your mixes" row; the rest are behind Show all
+  const OTHER_ROW_CAP = 10;   // same as Spotify's shelf; the rest are behind Show all
   const isDaily = (name) => /^daily mix/i.test(String(name).replace(/^better\s+/i, ""));
 
   function buildRow(id, title, items) {
