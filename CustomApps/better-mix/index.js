@@ -15,8 +15,8 @@
 // Resolved lazily: this file runs at load, before Spicetify.React exists.
 // Reading it at the top level would throw and the app would never mount.
 const h = (...a) => Spicetify.React.createElement(...a);
-const useState = (...a) => Spicetify.useState(...a);
-const useEffect = (...a) => Spicetify.useEffect(...a);
+const useState = (...a) => Spicetify.React.useState(...a);
+const useEffect = (...a) => Spicetify.React.useEffect(...a);
 const ROUTE = "/better-mix";
 
 const readStore = () => { try { return JSON.parse(localStorage.getItem("better-mix:virtual")) || []; } catch { return []; } };
