@@ -1,45 +1,46 @@
 // ============================================================================
 // home-mixes.js — hide Spotify's mix shelves, show your own instead
 // ----------------------------------------------------------------------------
-// Spotify's Home rows ("Soundtrack your Tuesday evening", the Daily Mixes)
-// are server-rendered and read-only -- you cannot put your own tracks in them.
-// So this hides the ones you don't want and injects a row of your own
-// playlists in their place.
+// Spotify's mix rows are server-rendered and read-only: you cannot put your
+// own tracks in them. So this hides them and draws a row of YOUR mixes in
+// their place.
 //
-// Pairs with better-mix.js: generate playlists there, list them here.
+// Your mixes are VIRTUAL. They live in this client's storage, built by
+// better-mix.js, and clicking one plays it straight from that list -- no
+// playlist is ever saved unless you hit "save" on a card. That keeps your
+// library clean; the trade is that a virtual mix can't be seen from your
+// phone until you save it.
 //
-// HOW MIXES ARE FOUND:
+// HOW SPOTIFY'S MIXES ARE FOUND:
 // By the playlists themselves, not the shelf heading -- Spotify-generated id
 // prefix plus "Mix" in the name. Headings change with the day ("Soundtrack
 // your Tuesday evening"), so anything keyed on them would break by Wednesday.
 // ============================================================================
 
 (function homeMixes() {
-  const SRC_KEY = "home-mixes:sources";
+  const SRC_KEY  = "home-mixes:sources";   // Spotify mixes we've seen (written here)
+  const VIRT_KEY = "better-mix:virtual";   // your built mixes (written by better-mix.js)
 
   // Defined BEFORE anything else, reading raw localStorage so it needs no
-  // Spicetify at all. If you can call this, the file loaded -- and it tells
-  // you whether the rest has initialised yet. A diagnostic that only exists
-  // once the thing it diagnoses is working isn't much of a diagnostic.
+  // Spicetify at all. A diagnostic that only exists once the thing it
+  // diagnoses is working isn't much of a diagnostic.
   window.homeSources ||= () => {
     let rows = [];
     try { rows = JSON.parse(localStorage.getItem(SRC_KEY)) || []; } catch {}
-    console.log(`[home-mixes] ${window.__homeMixesReady ? "ready" : "still initialising — give it a few seconds"} · ${rows.length} mixes recorded`);
+    console.log(`[home-mixes] ${window.__homeMixesReady ? "ready" : "still initialising — give it a few seconds"} · ${rows.length} Spotify mixes recorded`);
     console.table(rows);
     return rows;
   };
 
   // --- Wait for Spicetify ----------------------------------------------------
-  // Polls until the pieces we need exist. After a reload that can take several
-  // seconds, and NOTHING below runs until it passes. Saying so out loud is what
-  // stops "is it broken or just not ready yet" from being a guessing game.
   const startedAt = (window.__homeMixesStart ??= Date.now());
   const gate = {
     RootlistAPI: !!Spicetify?.Platform?.RootlistAPI,
-    Menu: !!Spicetify?.Menu,
+    PlayerAPI:   !!Spicetify?.Platform?.PlayerAPI,
+    Menu:        !!Spicetify?.Menu,
     LocalStorage: !!Spicetify?.LocalStorage,
   };
-  if (!(gate.RootlistAPI && gate.Menu && gate.LocalStorage)) {
+  if (!Object.values(gate).every(Boolean)) {
     const waited = Date.now() - startedAt;
     if (waited < 400) console.log("[home-mixes] loaded, waiting for Spicetify…");
     else if (waited > 8000 && Date.now() - (window.__homeMixesWarn || 0) > 8000) {
@@ -55,43 +56,34 @@
 
   const HIDE_KEY = "home-mixes:patterns";
   const SHOW_KEY = "home-mixes:enabled";
-  const ROW_ID = "home-mixes-row";
+  const ROW_ID   = "home-mixes-row";
 
-  // Substring matches against shelf headings, case-insensitive. Edit via the
-  // profile menu, or just change these defaults.
   // Spotify's algorithmically generated playlists all share this id prefix.
-  // Combined with a "Mix" in the name, that's a precise test for the things
-  // you actually want replaced -- Daily Mix, Driving Mix, Chill Happy Mix --
-  // without catching your own playlists that happen to say "mix".
+  // With "Mix" in the name that's a precise test for Daily Mix, Driving Mix,
+  // Chill Happy Mix -- without catching your own playlists that say "mix".
   const MIX_ID = /^37i9dQZF1E/;
   const isMix = (name, id) => MIX_ID.test(id) && /\bmix\b/i.test(name);
 
   // Extra shelves to hide by heading, beyond the auto-detected mix rows.
   const DEFAULT_PATTERNS = [];
-
   const patterns = () => {
     try { return JSON.parse(Spicetify.LocalStorage.get(HIDE_KEY)) || DEFAULT_PATTERNS; }
     catch { return DEFAULT_PATTERNS; }
   };
   let enabled = Spicetify.LocalStorage.get(SHOW_KEY) !== "false";
 
-  // --- Finding shelves -------------------------------------------------------
-  // A shelf is a section element; its heading is the first h1/h2/h3 inside.
-  // LEAF sections only. Home has an outer <section> wrapping every shelf, and
-  // since we detect by descendant links, that container "contains" every mix
-  // on the page. Hide it and the whole Home page goes blank -- which is
-  // exactly what happened. A section holding other sections is a container,
-  // not a shelf.
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // --- Finding Spotify's shelves ------------------------------------------------
+  // LEAF sections only. Home wraps every shelf in an outer <section>, and
+  // since we detect by descendant links that container "contains" every mix
+  // on the page. Hide it and the whole Home page goes blank.
   function shelves() {
     return [...document.querySelectorAll('section, [data-testid="component-shelf"]')]
       .filter((s) => !s.querySelector("section"));
   }
+  const headingOf = (el) => el.querySelector("h1,h2,h3")?.textContent?.trim() || "";
 
-  function headingOf(el) {
-    return el.querySelector("h1,h2,h3")?.textContent?.trim() || "";
-  }
-
-  // Pull every Spotify-made "* Mix" out of a shelf.
   function mixesIn(shelf) {
     const out = [];
     let links = 0;
@@ -102,28 +94,21 @@
       const name = (a.getAttribute("aria-label") || a.title || a.textContent || "").trim();
       if (name && isMix(name, id)) out.push({ uri: "spotify:playlist:" + id, name });
     });
-    out.links = links;   // total playlist cards, so callers can judge the ratio
+    out.links = links;
     return out;
   }
 
-  // One pass: find mixes, remember them, and hide the rows that hold them.
-  // Detecting the row by its CONTENTS rather than its heading means it keeps
-  // working when Spotify renames it -- and those headings change with the day
-  // ("Soundtrack your Tuesday evening"), so heading matching was always fragile.
   function scan() {
     if (!enabled) return;
     const pats = patterns().map((p) => p.toLowerCase());
     const found = [];
-
     for (const s of shelves()) {
       if (s.id === ROW_ID || s.dataset.homeMixesChecked === "1") continue;
       const h = headingOf(s);
       if (!h) continue;
       s.dataset.homeMixesChecked = "1";
-
       const mixes = mixesIn(s);
       found.push(...mixes);
-
       // A mix shelf is MOSTLY mixes. "Recently played" can hold a couple of
       // Daily Mixes among your own playlists -- that row should stay.
       const mixShelf = mixes.length >= 2 && mixes.length * 2 >= mixes.links;
@@ -140,7 +125,6 @@
     found.forEach((x) => byUri.set(x.uri, x));
     try { Spicetify.LocalStorage.set(SRC_KEY, JSON.stringify([...byUri.values()])); } catch {}
   }
-
   // Filtered through the current rule, so entries recorded by older versions
   // (genre links, your own playlists) can't leak back in.
   function readSources() {
@@ -149,7 +133,6 @@
         .filter((x) => isMix(x?.name || "", String(x?.uri).split(":").pop()));
     } catch { return []; }
   }
-
   function unhideAll() {
     document.querySelectorAll('[data-home-mixes-hidden="1"]').forEach((s) => {
       s.style.display = "";
@@ -158,56 +141,120 @@
     });
   }
 
-  // --- Your row --------------------------------------------------------------
-  async function myMixes() {
-    const rl = await Spicetify.Platform.RootlistAPI.getContents({ limit: 200 });
-    return (rl?.items || []).filter(
-      (p) => String(p?.uri).includes(":playlist:") && /^better /i.test(p?.name || "")
-    );
+  // --- Your mixes --------------------------------------------------------------
+  // Read-only here. better-mix.js owns every write to this store and fires
+  // "better-mix:updated" when it changes; we just redraw. One writer means
+  // the two extensions can never disagree about what's in it.
+  const readVirtual = () => { try { return JSON.parse(localStorage.getItem(VIRT_KEY)) || []; } catch { return []; } };
+
+  async function playMix(mix) {
+    const uris = (mix.tracks || []).map((t) => t.uri).filter(Boolean);
+    if (!uris.length) return;
+    const PA = Spicetify.Platform.PlayerAPI;
+    // Play the first track directly, queue the rest behind it. No playlist
+    // needed -- the queue is the whole mechanism.
+    try { await PA.clearQueue?.(); } catch {}
+    await Spicetify.Player.playUri(uris[0]);
+    const rest = uris.slice(1).map((uri) => ({ uri }));
+    if (rest.length) {
+      try { await PA.addToQueue(rest); }
+      catch (e) {
+        try { await Spicetify.addToQueue?.(rest); }
+        catch (e2) { console.warn("[home-mixes] couldn't queue the rest:", e2); }
+      }
+    }
+    Spicetify.showNotification(`Playing ${mix.name}`);
   }
 
-  function card(p) {
-    const a = document.createElement("div");
-    a.className = "hmx-card";
-    a.innerHTML = `
-      <div class="hmx-art">${(p.name || "?").replace(/better mix\s*—?\s*/i, "").slice(0, 2).toUpperCase()}</div>
-      <div class="hmx-name">${(p.name || p.uri).replace(/</g, "&lt;")}</div>`;
-    a.onclick = () => Spicetify.Platform.History.push(
-      `/playlist/${String(p.uri).split(":").pop()}`
-    );
-    return a;
+  const openPlaylist = (uri) =>
+    Spicetify.Platform.History.push(`/playlist/${String(uri).split(":").pop()}`);
+
+  async function saveMix(mix, cardEl) {
+    const BM = window.BetterMix;
+    if (!BM?.saveVirtual) return Spicetify.showNotification("Better Mix isn't loaded", true);
+    cardEl.classList.add("hmx-busy");
+    try {
+      await BM.saveVirtual(mix.id);       // writes savedUri + fires the update event
+      Spicetify.showNotification(`Saved "${mix.name}" to your library`);
+    } catch (e) {
+      Spicetify.showNotification("Couldn't save: " + (e?.message || e), true);
+    } finally {
+      cardEl.classList.remove("hmx-busy");
+    }
   }
 
-  async function injectRow() {
+  const icon = (name) =>
+    `<svg viewBox="0 0 16 16" fill="currentColor">${Spicetify.SVGIcons[name] || ""}</svg>`;
+
+  function card(mix) {
+    const el = document.createElement("div");
+    el.className = "hmx-card";
+    // The recommender hands back album art with every track, so each card
+    // gets a real mosaic like Spotify's own playlist covers.
+    const imgs = [...new Set((mix.tracks || []).map((t) => t.image).filter(Boolean))].slice(0, 4);
+    const art = imgs.length >= 4
+      ? `<div class="hmx-mosaic">${imgs.map((u) => `<img src="${esc(u)}" alt="">`).join("")}</div>`
+      : imgs.length
+        ? `<img class="hmx-single" src="${esc(imgs[0])}" alt="">`
+        : `<div class="hmx-fallback">${esc(mix.name.replace(/^better\s+/i, "").slice(0, 2).toUpperCase())}</div>`;
+
+    const saved = !!mix.savedUri;
+    el.innerHTML = `
+      <div class="hmx-art">${art}<button class="hmx-play" title="Play">${icon("play")}</button></div>
+      <div class="hmx-name" title="${esc(mix.name)}">${esc(mix.name)}</div>
+      <div class="hmx-meta">
+        <span>${(mix.tracks || []).length} songs${saved ? " · saved" : ""}</span>
+        <button class="hmx-save" title="${saved ? "Open the saved playlist" : "Save as a real playlist"}">${saved ? "open" : "save"}</button>
+      </div>`;
+
+    el.querySelector(".hmx-art").onclick = () => playMix(mix);
+    el.querySelector(".hmx-play").onclick = (e) => { e.stopPropagation(); playMix(mix); };
+    el.querySelector(".hmx-save").onclick = (e) => {
+      e.stopPropagation();
+      saved ? openPlaylist(mix.savedUri) : saveMix(mix, el);
+    };
+    return el;
+  }
+
+  const onHome = () => {
+    const path = Spicetify.Platform.History?.location?.pathname ?? location.pathname;
+    return /^\/?(home)?\/?$/.test(path);
+  };
+
+  function injectRow() {
     if (!enabled) return;
-    // Only on Home.
-    if (!/^\/?($|home)/.test(location.pathname.replace(/^\/+/, ""))) return;
+    const existing = document.getElementById(ROW_ID);
+    if (!onHome()) { existing?.remove(); return; }
 
     const container = document.querySelector(".main-view-container__scroll-node-child")
-      || document.querySelector("main")
-      || null;
+      || document.querySelector("main");
     if (!container) return;
 
-    const mixes = await myMixes();
-    const existing = document.getElementById(ROW_ID);
+    const mixes = readVirtual();
     if (!mixes.length) { existing?.remove(); return; }
-    if (existing) return;                       // already placed
+    if (existing) return;
 
     const row = document.createElement("section");
     row.id = ROW_ID;
-    row.innerHTML = `<h2 class="hmx-heading">Your mixes</h2><div class="hmx-strip"></div>`;
+    row.innerHTML = `
+      <div class="hmx-head">
+        <h2 class="hmx-heading">Your mixes</h2>
+        <button class="hmx-rebuild">Rebuild</button>
+      </div>
+      <div class="hmx-strip"></div>`;
+    row.querySelector(".hmx-rebuild").onclick = () =>
+      window.BetterMix?.open ? window.BetterMix.open() : Spicetify.showNotification("Better Mix isn't loaded", true);
     const strip = row.querySelector(".hmx-strip");
-    mixes.forEach((p) => strip.appendChild(card(p)));
+    mixes.forEach((m) => strip.appendChild(card(m)));
     container.prepend(row);
   }
 
+  const redraw = () => { document.getElementById(ROW_ID)?.remove(); schedule(); };
+  window.addEventListener("better-mix:updated", redraw);
+
   // --- Keeping up with navigation -------------------------------------------
-  // Spotify re-renders Home constantly, so a one-shot pass isn't enough. Same
-  // approach as hide-announcements: queue work and run it when idle, rather
-  // than doing DOM scans inside the observer callback.
   let scheduled = false;
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 250));
-
   function schedule() {
     if (scheduled) return;
     scheduled = true;
@@ -220,34 +267,46 @@
   new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
   schedule();
 
-  // --- Styles ----------------------------------------------------------------
+  // --- Styles ------------------------------------------------------------------
   const css = document.createElement("style");
   css.textContent = `
     #${ROW_ID} { padding: 8px 0 24px; }
-    .hmx-heading { font-size: 24px; font-weight: 700; margin: 0 0 16px; color: var(--spice-text, #fff); }
+    .hmx-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
+    .hmx-heading { font-size: 24px; font-weight: 700; margin: 0; color: var(--spice-text, #fff); }
+    .hmx-rebuild { background: transparent; border: 0; color: var(--spice-subtext, #b3b3b3); font-size: 14px; font-weight: 700; cursor: pointer; }
+    .hmx-rebuild:hover { color: var(--spice-text, #fff); text-decoration: underline; }
     .hmx-strip { display: flex; gap: 18px; overflow-x: auto; padding-bottom: 6px; }
-    .hmx-card { width: 160px; flex: 0 0 auto; cursor: pointer; border-radius: 8px; padding: 12px; background: var(--spice-card, #181818); transition: background-color 150ms ease; }
+    .hmx-card { width: 180px; flex: 0 0 auto; border-radius: 8px; padding: 12px; background: var(--spice-card, #181818); transition: background-color 150ms ease; }
     .hmx-card:hover { background: var(--spice-highlight, #282828); }
-    .hmx-art { width: 100%; aspect-ratio: 1; border-radius: 6px; display: flex; align-items: center; justify-content: center;
-               font-size: 40px; font-weight: 700; color: var(--spice-main, #121212);
-               background: linear-gradient(135deg, var(--spice-button, #1ed760), var(--spice-button-active, #1db954)); }
-    .hmx-name { margin-top: 12px; font-size: 14px; font-weight: 600; color: var(--spice-text, #fff);
-                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hmx-card.hmx-busy { opacity: .6; pointer-events: none; }
+    .hmx-art { position: relative; width: 100%; aspect-ratio: 1; border-radius: 6px; overflow: hidden; cursor: pointer; background: var(--spice-main, #121212); }
+    .hmx-mosaic { display: grid; grid-template-columns: 1fr 1fr; width: 100%; height: 100%; }
+    .hmx-mosaic img, .hmx-single { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .hmx-fallback { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: 700;
+                    color: var(--spice-main, #121212); background: linear-gradient(135deg, var(--spice-button, #1ed760), var(--spice-button-active, #1db954)); }
+    .hmx-play { position: absolute; right: 8px; bottom: 8px; width: 44px; height: 44px; border-radius: 50%; border: 0; cursor: pointer;
+                background: var(--spice-button, #1ed760); color: var(--spice-main, #121212); display: flex; align-items: center; justify-content: center;
+                opacity: 0; transform: translateY(6px); transition: opacity 150ms ease, transform 150ms ease; box-shadow: 0 8px 16px rgba(0,0,0,.4); }
+    .hmx-play svg { width: 20px; height: 20px; margin-left: 2px; }
+    .hmx-card:hover .hmx-play { opacity: 1; transform: none; }
+    .hmx-name { margin-top: 12px; font-size: 14px; font-weight: 700; color: var(--spice-text, #fff); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hmx-meta { margin-top: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--spice-subtext, #b3b3b3); }
+    .hmx-save { background: transparent; border: 1px solid var(--spice-misc, #555); color: var(--spice-subtext, #b3b3b3); border-radius: 12px; padding: 2px 10px; font-size: 11px; font-weight: 700; cursor: pointer; }
+    .hmx-save:hover { border-color: var(--spice-button, #1ed760); color: var(--spice-text, #fff); }
   `;
   document.head.appendChild(css);
 
-  // --- Toggle ----------------------------------------------------------------
+  // --- Toggle ------------------------------------------------------------------
   new Spicetify.Menu.Item("Replace Spotify's mix rows", enabled, (self) => {
     enabled = !enabled;
     self.setState(enabled);
     Spicetify.LocalStorage.set(SHOW_KEY, String(enabled));
-    if (enabled) { schedule(); }
+    if (enabled) schedule();
     else { unhideAll(); document.getElementById(ROW_ID)?.remove(); }
     Spicetify.showNotification(enabled ? "Showing your mixes" : "Spotify's rows restored");
   }).register();
 
-  // --- Console helpers -------------------------------------------------------
-  // Headings change with the time of day, so print what's actually on screen.
+  // --- Console helpers ---------------------------------------------------------
   window.homeShelves = () => {
     const rows = shelves()
       .filter((s) => s.id !== ROW_ID && headingOf(s))
@@ -255,7 +314,6 @@
     console.table(rows);
     return rows;
   };
-
   window.homeHide = (...pats) => {
     const next = [...new Set([...patterns(), ...pats])];
     Spicetify.LocalStorage.set(HIDE_KEY, JSON.stringify(next));
@@ -268,18 +326,15 @@
     unhideAll(); schedule();
     console.log("reset to:", DEFAULT_PATTERNS);
   };
-
   window.homeSources = () => { console.table(readSources()); return readSources(); };
-  window.homeSources.clear = () => {
-    Spicetify.LocalStorage.set(SRC_KEY, "[]");
-    console.log("captured mixes cleared");
-  };
+  window.homeSources.clear = () => { Spicetify.LocalStorage.set(SRC_KEY, "[]"); console.log("captured mixes cleared"); };
   window.homeRescan = () => {
     document.querySelectorAll("[data-home-mixes-checked]").forEach((s) => delete s.dataset.homeMixesChecked);
-    schedule();
+    redraw();
     console.log("rescanning…");
   };
+  window.homeMixes = () => { const v = readVirtual(); console.table(v.map((m) => ({ name: m.name, songs: m.tracks?.length, saved: !!m.savedUri, built: m.builtAt }))); return v; };
 
-  console.log(`[home-mixes] loaded — ${readSources().length} Spotify mixes recorded. ` +
-    "homeShelves() lists your Home rows, homeSources() lists captured mixes.");
+  console.log(`[home-mixes] ${readSources().length} Spotify mixes recorded, ${readVirtual().length} of yours built. ` +
+    "homeShelves() · homeSources() · homeMixes()");
 })();

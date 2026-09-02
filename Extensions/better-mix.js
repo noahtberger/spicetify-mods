@@ -171,6 +171,25 @@
     return uri;
   }
 
+  // --- The virtual store --------------------------------------------------------
+  // Built mixes live here, in this client's storage, NOT as Spotify playlists.
+  // home-mixes.js draws its row from this and plays straight from it. Nothing
+  // reaches your library unless you save one. This file is the only writer.
+  const VIRT_KEY = "better-mix:virtual";
+  const readVirtual = () => { try { return JSON.parse(localStorage.getItem(VIRT_KEY)) || []; } catch { return []; } };
+  const writeVirtual = (list) => {
+    try { localStorage.setItem(VIRT_KEY, JSON.stringify(list)); } catch (e) { console.warn("[better-mix] store write failed", e); }
+    window.dispatchEvent(new Event("better-mix:updated"));
+  };
+  // Keep only what a card needs. Full track objects x 30 mixes would bloat
+  // localStorage for no benefit.
+  const slim = (t) => ({
+    uri: t.uri, name: t.name,
+    artists: (t.artists || []).map((a) => ({ name: a.name })),
+    image: t.album?.imageUrl || t.album?.largeImageUrl || null,
+    popularity: t.popularity ?? null,
+  });
+
   // Spotify already sorts these by mood and activity -- Chill Happy, Driving,
   // Melancholy. Reusing their grouping is far better than trying to cluster
   // your library into moods, and the names come out meaningful for free.
@@ -180,16 +199,24 @@
       throw new Error("No Spotify mixes recorded yet — open Home once so home-mixes can see them.");
     }
 
+    const store = readVirtual();
     const done = [];
     for (const m of mixes) {
       logLine(`\n=== ${m.name} ===`);
       try {
-        const tracks = await buildMix({
-          sourceUri: m.uri, total, familiarCount, maxPerArtist,
-        });
+        const tracks = await buildMix({ sourceUri: m.uri, total, familiarCount, maxPerArtist });
         const name = "Better " + m.name.replace(/^better\s+/i, "");
-        await saveMix(name, tracks);
-        logLine(`saved "${name}" (${tracks.length} tracks)`);
+        const prev = store.find((x) => x.sourceUri === m.uri);
+        const entry = {
+          id: prev?.id || ("bm-" + String(m.uri).split(":").pop()),
+          name, sourceUri: m.uri, sourceName: m.name,
+          builtAt: new Date().toISOString(),
+          savedUri: prev?.savedUri || null,        // a saved one stays saved
+          tracks: tracks.map(slim),
+        };
+        if (prev) Object.assign(prev, entry); else store.push(entry);
+        writeVirtual(store);                       // redraw after each, not at the end
+        logLine(`built "${name}" (${tracks.length} tracks)`);
         done.push(name);
       } catch (e) {
         // One dud mix shouldn't abandon the rest of the run -- but say why.
@@ -198,6 +225,17 @@
       }
     }
     return done;
+  }
+
+  // Promote a virtual mix to a real playlist. Called from the card's "save".
+  async function saveVirtual(id) {
+    const store = readVirtual();
+    const entry = store.find((x) => x.id === id);
+    if (!entry) throw new Error("mix not found");
+    const uri = await saveMix(entry.name, entry.tracks);
+    entry.savedUri = uri;
+    writeVirtual(store);
+    return uri;
   }
 
   // --- UI --------------------------------------------------------------------
@@ -225,7 +263,7 @@
       <div class="bmx-actions">
         <button class="bmx-btn" id="bmx-preview">Preview</button>
         <button class="bmx-btn" id="bmx-create">Create from this playlist</button>
-        <button class="bmx-btn bmx-primary" id="bmx-all">Rebuild my Spotify mixes (${spotifyMixes().length})</button>
+        <button class="bmx-btn bmx-primary" id="bmx-all">Build my Spotify mixes (${spotifyMixes().length})</button>
       </div>
       <pre class="bmx-log" id="bmx-log"></pre>`;
 
@@ -273,7 +311,7 @@
           familiarCount: +val("#bmx-fam"),
           maxPerArtist: +val("#bmx-cap"),
         });
-        logLine(`\ndone — ${made.length} playlists built`);
+        logLine(`\ndone — ${made.length} mixes built. They're on your Home page; nothing was saved to your library.`);
         Spicetify.showNotification(`Built ${made.length} mixes`);
       } catch (e) {
         logLine("\nFAILED: " + (e?.message || e));
@@ -321,5 +359,8 @@
     "enhance"
   ).register();
 
-  console.log("[better-mix] loaded");
+  // Shared surface for home-mixes.js (and for poking at from the console).
+  window.BetterMix = { open: () => openMenu(), rebuildAll, saveVirtual, virtual: readVirtual };
+
+  console.log(`[better-mix] loaded — ${readVirtual().length} mixes in store`);
 })();
