@@ -491,13 +491,16 @@
   let building = false;
   const readCurrent = () => { try { return JSON.parse(localStorage.getItem(CUR_KEY)) || []; } catch { return []; } };
 
-  // EVERY Spotify mix it has ever seen -- daily, mood, artist -- rebuilt once
-  // per calendar day at the first startup of the day, no button anywhere.
-  // Order: Daily Mixes, then whatever's on Home right now, then the rest.
-  // "Stale" is calendar-based: built on a different local day than today.
-  // Spotify refreshes its mixes overnight, so yesterday's build came from
-  // yesterday's input even if it's only hours old. An hourly check catches
-  // the day rolling over while Spotify stays open.
+  // Two tiers, no button anywhere:
+  //   daily  -- the six Daily Mixes plus whatever Spotify is showing on Home
+  //             right now (10-12 mixes): rebuilt at the first startup of each
+  //             calendar day, matching Spotify's overnight refresh.
+  //   weekly -- the rest of Spotify's catalogue (the "Made for you" hub has
+  //             60+): rebuilt when a week old. You only meet these via Show
+  //             all, so refreshing them daily was work nobody would see.
+  // "Stale" is calendar-based for the daily tier: built on a different local
+  // day than today. An hourly check catches the day rolling over while
+  // Spotify stays open.
   const today = () => new Date().toDateString();
   const builtToday = (e) => !!e?.builtAt && new Date(e.builtAt).toDateString() === today();
   const dailyNum = (m) => parseInt(String(m.name).replace(/\D/g, ""), 10) || 0;
@@ -506,15 +509,18 @@
   async function autoBuild(reason) {
     if (building) return;
     const store = readVirtual();
+    const entry = (m) => store.find((x) => x.sourceUri === m.uri);
     const seen = new Set();
-    const targets = [...dailyMixes(), ...readCurrent(), ...spotifyMixes()].filter((m) => !seen.has(m.uri) && seen.add(m.uri));
-    const due = targets.filter((m) => {
-      const e = store.find((x) => x.sourceUri === m.uri);
-      return !e || e.rules !== RULES_VERSION || !builtToday(e);
-    });
+    const take = (list) => list.filter((m) => !seen.has(m.uri) && seen.add(m.uri));
+    const visible = take([...dailyMixes(), ...readCurrent()]);   // daily tier
+    const rest = take(spotifyMixes());                           // weekly tier
+    const WEEK = 7 * 24 * 60 * 60 * 1000;
+    const dueDaily = visible.filter((m) => { const e = entry(m); return !e || e.rules !== RULES_VERSION || !builtToday(e); });
+    const dueWeekly = rest.filter((m) => { const e = entry(m); return !e || e.rules !== RULES_VERSION || Date.now() - Date.parse(e.builtAt || 0) > WEEK; });
+    const due = [...dueDaily, ...dueWeekly];
     if (!due.length) return;
     building = true;
-    console.log(`[better-mix] auto-building ${due.length} of ${targets.length} mixes — ${reason}: ${due.map((m) => m.name).join(", ")}`);
+    console.log(`[better-mix] auto-building ${due.length} mixes (${dueDaily.length} daily-tier, ${dueWeekly.length} weekly-tier) — ${reason}: ${due.map((m) => m.name).join(", ")}`);
     Spicetify.showNotification(`Building today's mixes (${due.length}) — a few minutes in the background`);
     const prevLog = logLine;
     logLine = (m) => console.log("[better-mix]", m);
