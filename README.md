@@ -125,6 +125,17 @@ installing an app, silently. So after editing anything in `CustomApps/`:
 ./sync-app.sh && spicetify apply -n
 ```
 
+### Checking before you ship
+
+```bash
+./smoke-test.sh
+```
+
+Loads each extension against a stubbed Spotify and reports anything that
+throws. A syntax check isn't enough -- `sleep is not defined` is valid
+JavaScript that only fails when the line runs, and it shipped once. `sync-app.sh`
+runs this automatically and refuses to copy a failing build.
+
 ## Gotchas
 
 **Editing a file changes nothing until you re-apply.** Spotify runs whatever

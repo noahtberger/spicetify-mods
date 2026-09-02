@@ -17,6 +17,9 @@ for js in CustomApps/*/*.js; do
     new Function(src); 'ok'" >/dev/null || { echo "SYNTAX ERROR in $js - not syncing"; exit 1; }
 done
 
+# Load-test everything too: a syntax check passes code that throws at runtime.
+./smoke-test.sh || { echo "smoke test failed - not syncing"; exit 1; }
+
 for app in CustomApps/*/; do
   name="$(basename "$app")"
   mkdir -p "$DEST/$name"
