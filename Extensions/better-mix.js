@@ -37,7 +37,7 @@
   // else is nice-to-have -- wait up to 10s for it, then carry on without.
   const core = !!(Spicetify?.Platform?.PlaylistAPI && Spicetify?.showNotification);
   const nice = {
-    Playbar: !!Spicetify?.Playbar, PopupModal: !!Spicetify?.PopupModal,
+    PopupModal: !!Spicetify?.PopupModal,
     ContextMenu: !!Spicetify?.ContextMenu, PlayerAPI: !!Spicetify?.Platform?.PlayerAPI,
   };
   const missing = Object.keys(nice).filter((k) => !nice[k]);
@@ -618,10 +618,8 @@
   `;
   document.head.appendChild(css);
 
-  if (Spicetify.Playbar) {
-    const ICON = `<svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor">${Spicetify.SVGIcons.enhance}</svg>`;
-    new Spicetify.Playbar.Button("Better Mix", ICON, openMenu).element.classList.add("bmx-playbar-btn");
-  }
+  // No play-bar button: everything is automatic. Settings live on the Better
+  // Mix page (sidebar) and the right-click entry below stays for one-offs.
   // Right-click a playlist -> build from it directly. The playlist you clicked
   // IS the input, so this skips the picker entirely.
   if (Spicetify.ContextMenu) {

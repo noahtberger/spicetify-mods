@@ -102,17 +102,27 @@
   }
   const headingOf = (el) => el.querySelector("h1,h2,h3")?.textContent?.trim() || "";
 
+  // Count CARDS, not links. A mood-mix card carries extra "Also try pop,
+  // indie, …" playlist links inside it, so counting links made a shelf of
+  // five mixes look like 5 of 20 -- a minority -- and it was never hidden.
+  // Links are grouped by the card they sit in; a text-only link with no card
+  // ancestor and no image (a stray "Also try" link) isn't a card at all.
+  const CARD_SEL = '.main-card-card, [data-testid*="card"], article, li';
   function mixesIn(shelf) {
     const out = [];
-    let links = 0;
+    const cards = new Set(), mixCards = new Set();
     shelf.querySelectorAll('a[href*="/playlist/"]').forEach((a) => {
       const id = a.getAttribute("href")?.split("/playlist/")[1]?.split(/[?#]/)[0];
       if (!id) return;
-      links++;
       const name = (a.getAttribute("aria-label") || a.title || a.textContent || "").trim();
-      if (name && isMix(name, id)) out.push({ uri: "spotify:playlist:" + id, name });
+      const mix = !!name && isMix(name, id);
+      const card = a.closest(CARD_SEL);
+      if (!card && !mix && !a.querySelector("img")) return;   // stray text link
+      const key = card || a;
+      cards.add(key);
+      if (mix && !mixCards.has(key)) { mixCards.add(key); out.push({ uri: "spotify:playlist:" + id, name }); }
     });
-    out.links = links;
+    out.links = cards.size;
     return out;
   }
 
@@ -130,6 +140,8 @@
       // A mix shelf is MOSTLY mixes. "Recently played" can hold a couple of
       // Daily Mixes among your own playlists -- that row should stay.
       const mixShelf = mixes.length >= 2 && mixes.length * 2 >= mixes.links;
+      if (mixes.length >= 2 && !mixShelf)
+        console.log(`[home-mixes] "${h}": ${mixes.length} mix cards of ${mixes.links} — left visible (not a mix shelf)`);
       if (mixShelf || pats.some((p) => h.toLowerCase().includes(p))) {
         s.style.display = "none";
         s.dataset.homeMixesHidden = "1";
