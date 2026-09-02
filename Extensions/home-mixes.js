@@ -27,7 +27,15 @@
 
   // Substring matches against shelf headings, case-insensitive. Edit via the
   // profile menu, or just change these defaults.
-  const DEFAULT_PATTERNS = ["soundtrack your", "made for you", "jump back in"];
+  // Spotify's algorithmically generated playlists all share this id prefix.
+  // Combined with a "Mix" in the name, that's a precise test for the things
+  // you actually want replaced -- Daily Mix, Driving Mix, Chill Happy Mix --
+  // without catching your own playlists that happen to say "mix".
+  const MIX_ID = /^37i9dQZF1E/;
+  const isMix = (name, id) => MIX_ID.test(id) && /\bmix\b/i.test(name);
+
+  // Extra shelves to hide by heading, beyond the auto-detected mix rows.
+  const DEFAULT_PATTERNS = [];
 
   const patterns = () => {
     try { return JSON.parse(Spicetify.LocalStorage.get(HIDE_KEY)) || DEFAULT_PATTERNS; }
@@ -45,36 +53,46 @@
     return el.querySelector("h1,h2,h3")?.textContent?.trim() || "";
   }
 
-  function hideMatching() {
+  // Pull every Spotify-made "* Mix" out of a shelf.
+  function mixesIn(shelf) {
+    const out = [];
+    shelf.querySelectorAll('a[href*="/playlist/"]').forEach((a) => {
+      const id = a.getAttribute("href")?.split("/playlist/")[1]?.split(/[?#]/)[0];
+      if (!id) return;
+      const name = (a.getAttribute("aria-label") || a.title || a.textContent || "").trim();
+      if (name && isMix(name, id)) out.push({ uri: "spotify:playlist:" + id, name });
+    });
+    return out;
+  }
+
+  // One pass: find mixes, remember them, and hide the rows that hold them.
+  // Detecting the row by its CONTENTS rather than its heading means it keeps
+  // working when Spotify renames it -- and those headings change with the day
+  // ("Soundtrack your Tuesday evening"), so heading matching was always fragile.
+  function scan() {
     if (!enabled) return;
     const pats = patterns().map((p) => p.toLowerCase());
+    const found = [];
+
     for (const s of shelves()) {
-      if (s.dataset.homeMixesChecked === "1") continue;
-      const h = headingOf(s).toLowerCase();
+      if (s.id === ROW_ID || s.dataset.homeMixesChecked === "1") continue;
+      const h = headingOf(s);
       if (!h) continue;
       s.dataset.homeMixesChecked = "1";
-      if (pats.some((p) => h.includes(p))) {
-        recordSources(s, headingOf(s));   // capture BEFORE hiding
+
+      const mixes = mixesIn(s);
+      found.push(...mixes);
+
+      // Two or more means it's a mix shelf, not a stray card in some other row.
+      if (mixes.length >= 2 || pats.some((p) => h.toLowerCase().includes(p))) {
         s.style.display = "none";
         s.dataset.homeMixesHidden = "1";
       }
     }
+    if (found.length) record(found);
   }
 
-  // Pull the playlist URIs and names out of a shelf and remember them.
-  // Grabbing the name here avoids a second API call later, and these shelves
-  // only exist on Home -- better-mix shouldn't depend on being on that page.
-  function recordSources(shelf, heading) {
-    const found = [];
-    shelf.querySelectorAll('a[href*="/playlist/"]').forEach((a) => {
-      const id = a.getAttribute("href")?.split("/playlist/")[1]?.split(/[?#]/)[0];
-      if (!id) return;
-      const name = (a.getAttribute("aria-label") || a.title || a.textContent || "").trim()
-        || (a.closest("[role='group'],div")?.textContent || "").trim().slice(0, 60);
-      if (name) found.push({ uri: "spotify:playlist:" + id, name, shelf: heading });
-    });
-    if (!found.length) return;
-
+  function record(found) {
     const byUri = new Map(readSources().map((x) => [x.uri, x]));
     found.forEach((x) => byUri.set(x.uri, x));
     try { Spicetify.LocalStorage.set(SRC_KEY, JSON.stringify([...byUri.values()])); } catch {}
@@ -145,7 +163,7 @@
   function schedule() {
     if (scheduled) return;
     scheduled = true;
-    idle(() => { scheduled = false; hideMatching(); injectRow(); });
+    idle(() => { scheduled = false; scan(); injectRow(); });
   }
 
   new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
@@ -180,10 +198,13 @@
   // --- Console helpers -------------------------------------------------------
   // Headings change with the time of day, so print what's actually on screen.
   window.homeShelves = () => {
-    const rows = shelves().map((s) => headingOf(s)).filter(Boolean);
-    console.table(rows.map((h) => ({ heading: h, hidden: patterns().some((p) => h.toLowerCase().includes(p.toLowerCase())) })));
+    const rows = shelves()
+      .filter((s) => s.id !== ROW_ID && headingOf(s))
+      .map((s) => ({ heading: headingOf(s), mixes: mixesIn(s).length, hidden: s.dataset.homeMixesHidden === "1" }));
+    console.table(rows);
     return rows;
   };
+
   window.homeHide = (...pats) => {
     const next = [...new Set([...patterns(), ...pats])];
     Spicetify.LocalStorage.set(HIDE_KEY, JSON.stringify(next));
@@ -198,6 +219,15 @@
   };
 
   window.homeSources = () => { console.table(readSources()); return readSources(); };
+  window.homeSources.clear = () => {
+    Spicetify.LocalStorage.set(SRC_KEY, "[]");
+    console.log("captured mixes cleared");
+  };
+  window.homeRescan = () => {
+    document.querySelectorAll("[data-home-mixes-checked]").forEach((s) => delete s.dataset.homeMixesChecked);
+    schedule();
+    console.log("rescanning…");
+  };
 
   console.log(`[home-mixes] loaded — ${readSources().length} Spotify mixes recorded. ` +
     "homeShelves() lists your Home rows, homeSources() lists captured mixes.");
