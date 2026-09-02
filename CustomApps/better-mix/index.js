@@ -299,7 +299,7 @@ function MixPage({ mix }) {
               [["compact", "Compact"], ["list", "List"]].map(([key, label]) =>
                 h("button", { key, className: "bmx-menu-item bmx-menu-view" + (view === key ? " bmx-menu-on" : ""),
                   onClick: () => { chooseView(key); setMenu(false); } },
-                  sicon(key), h("span", null, label), view === key ? sicon("tick") : null)))))),
+                  sicon(key), h("span", null, label), view === key ? sicon("tick") : null))))))),
 
     h("div", { className: "bmx-table" + (view === "compact" ? " bmx-compact" : "") },
       h("div", { className: "bmx-thead" },
