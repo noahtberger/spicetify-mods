@@ -32,9 +32,14 @@
 .bmx-stats b { color: var(--spice-text, #fff); }
 
 /* --- action row --- */
-.bmx-actions { display: flex; align-items: center; gap: 24px; padding: 24px 0 24px; }
-.bmx-iconbtn { width: 32px; height: 32px; padding: 0; border: 0; background: transparent; cursor: pointer;
-               display: flex; align-items: center; justify-content: center; font-size: 32px;
+.bmx-actions { display: flex; align-items: center; gap: 8px; padding: 24px 0 24px; }
+.bmx-actions .bmx-playbtn { margin-right: 16px; }
+/* 28px glyph in a 40px hit area. The glyph was filling the whole button at
+   32px, which is why the strokes read as fat -- these paths are authored for
+   a 16px viewBox, so the less they're scaled up the closer they sit to
+   Spotify's own weight. */
+.bmx-iconbtn { width: 40px; height: 40px; padding: 0; border: 0; background: transparent; cursor: pointer;
+               display: flex; align-items: center; justify-content: center; font-size: 28px; line-height: 0;
                color: var(--spice-subtext, #b3b3b3); transition: color 120ms ease, transform 120ms ease; }
 .bmx-iconbtn:hover:not(:disabled) { color: var(--spice-text, #fff); transform: scale(1.06); }
 .bmx-iconbtn:disabled { opacity: .5; cursor: default; }
