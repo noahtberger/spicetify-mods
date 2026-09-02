@@ -1,9 +1,8 @@
 [
   {
     "name": "Better Mix",
-    "description": "Every mix Spotify makes for you, rebuilt daily without the songs you already play: popular tracks by artists you don't listen to, shown on Home in place of Spotify's rows.",
-    "main": "Extensions/better-mix.js",
-    "readme": "Extensions/better-mix.md",
+    "description": "Every mix Spotify makes for you, rebuilt daily without the songs you already play: popular tracks by artists you don't listen to, shown on Home in place of Spotify's rows, each with its own playlist-style page.",
+    "readme": "CustomApps/better-mix/README.md",
     "branch": "main",
     "authors": [
       {
@@ -16,22 +15,6 @@
       "recommendations",
       "home",
       "daily mix"
-    ]
-  },
-  {
-    "name": "Better Mix Pages",
-    "description": "Optional add-on for the Better Mix extension: a playlist-style page for every mix, with tracklist, shuffle, search and sort. Needs a one-time spicetify apply.",
-    "readme": "CustomApps/better-mix/README.md",
-    "branch": "main",
-    "authors": [
-      {
-        "name": "noahtberger",
-        "url": "https://github.com/noahtberger"
-      }
-    ],
-    "tags": [
-      "mixes",
-      "pages"
     ]
   },
   {

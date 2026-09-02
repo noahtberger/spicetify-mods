@@ -8,10 +8,9 @@ is a web app, and Spicetify injects these files straight into it.
 ## Better Mix
 
 The main event: automatic better versions of every mix Spotify makes for you,
-shown on Home in place of Spotify's rows. It's a single extension --
-`Extensions/better-mix.js` -- so Marketplace installs it in one click. The
-optional **Better Mix Pages** custom app (`CustomApps/better-mix/`) adds
-playlist-style pages and needs a one-time `spicetify apply`:
+shown on Home in place of Spotify's rows, each with its own playlist-style
+page. It's a custom app that carries its extension with it
+(`subfiles_extension`), so the one folder installs everything:
 
 ```bash
 ./sync-app.sh                                # copies CustomApps/ into Spicetify's folder
@@ -19,8 +18,7 @@ spicetify config custom_apps better-mix
 spicetify apply
 ```
 
-Docs: [Extensions/better-mix.md](Extensions/better-mix.md) and
-[CustomApps/better-mix/README.md](CustomApps/better-mix/README.md).
+Details in [CustomApps/better-mix/README.md](CustomApps/better-mix/README.md).
 
 ## Extensions
 
@@ -74,7 +72,6 @@ means editing the repo edits the live files — no sync step.
 
 ```bash
 git clone <this repo> ~/spicetify-mods
-ln -s ~/spicetify-mods/Extensions/better-mix.js         ~/.config/spicetify/Extensions/better-mix.js
 ln -s ~/spicetify-mods/Extensions/sleep-timer.js        ~/.config/spicetify/Extensions/sleep-timer.js
 ln -s ~/spicetify-mods/Extensions/hide-announcements.js ~/.config/spicetify/Extensions/hide-announcements.js
 ```
@@ -86,7 +83,6 @@ Developer Mode is on.
 
 ```powershell
 git clone <this repo> $HOME\spicetify-mods
-New-Item -ItemType SymbolicLink -Path "$env:APPDATA\spicetify\Extensions\better-mix.js"         -Target "$HOME\spicetify-mods\Extensions\better-mix.js"
 New-Item -ItemType SymbolicLink -Path "$env:APPDATA\spicetify\Extensions\sleep-timer.js"        -Target "$HOME\spicetify-mods\Extensions\sleep-timer.js"
 New-Item -ItemType SymbolicLink -Path "$env:APPDATA\spicetify\Extensions\hide-announcements.js" -Target "$HOME\spicetify-mods\Extensions\hide-announcements.js"
 ```
@@ -94,7 +90,7 @@ New-Item -ItemType SymbolicLink -Path "$env:APPDATA\spicetify\Extensions\hide-an
 ### Then, either machine
 
 ```bash
-spicetify config extensions "better-mix.js|sleep-timer.js|hide-announcements.js"
+spicetify config extensions "sleep-timer.js|hide-announcements.js"
 spicetify apply
 ```
 

@@ -1,17 +1,16 @@
 // ============================================================================
 // better-mix.js — Spotify's mixes, rebuilt without the songs you already play
 // ----------------------------------------------------------------------------
-// One file, two halves, so Marketplace installs it in a single click:
+// One file, two halves, injected by the app that contains it:
 //   1. the builder   -- asks Spotify what fits each of its mixes for you, drops
 //                       everything you already play, keeps the popular rest;
 //                       runs itself daily.
 //   2. the Home rows -- hides Spotify's mix shelves and shows yours in their
 //                       place.
-// The optional "Better Mix Pages" custom app adds playlist-style pages; this
-// file works completely without it.
+// index.js in the same folder adds the playlist-style page for each mix.
 //
-// Installed twice (Marketplace plus a manual copy) would mean two sets of rows
-// and double builds, so the whole file runs once per page load.
+// Loaded twice would mean two sets of rows and double builds, so the whole
+// file runs once per page load.
 // ============================================================================
 if (window.__betterMixExtensionLoaded) {
   console.warn("[better-mix] already loaded — skipping a duplicate copy");
@@ -993,13 +992,12 @@ window.__betterMixExtensionLoaded = true;
   const playMix = (mix, startAt = 0) =>
     window.BetterMix?.play ? window.BetterMix.play(mix, startAt)
                            : Spicetify.showNotification("Better Mix isn't loaded", true);
-  // The tracklist pages come from the optional Better Mix Pages app. Its
-  // index.js sets this flag when it loads; without it, a card just plays.
-  const hasPages = () => !!window.__betterMixPages;
-  const openMix = (mix) => {
-    if (hasPages()) return Spicetify.Platform.History.push(`/better-mix?id=${encodeURIComponent(mix.id)}`, { id: mix.id });
-    playMix(mix);
-  };
+  // The pages ship in the same app folder as this file, so they're always
+  // there. (Don't feature-detect via a flag set by index.js: a custom app's
+  // index.js doesn't run until its route is visited, so the flag would be
+  // missing on first load and the first card click would just play.)
+  const openMix = (mix) =>
+    Spicetify.Platform.History.push(`/better-mix?id=${encodeURIComponent(mix.id)}`, { id: mix.id });
 
   const openPlaylist = (uri) =>
     Spicetify.Platform.History.push(`/playlist/${String(uri).split(":").pop()}`);
@@ -1096,9 +1094,7 @@ window.__betterMixExtensionLoaded = true;
         <span><span class="hmx-progress"></span><button class="hmx-rebuild hmx-showall">Show all</button></span>
       </div>
       <div class="hmx-strip"></div>`;
-    const showAll = row.querySelector(".hmx-showall");
-    if (hasPages()) showAll.onclick = () => Spicetify.Platform.History.push("/better-mix");
-    else showAll.remove();
+    row.querySelector(".hmx-showall").onclick = () => Spicetify.Platform.History.push("/better-mix");
     const strip = row.querySelector(".hmx-strip");
     items.forEach((m) => strip.appendChild(m.pending ? pendingCard(m.name) : card(m)));
     return row;

@@ -14,10 +14,6 @@
 
 // Resolved lazily: this file runs at load, before Spicetify.React exists.
 // Reading it at the top level would throw and the app would never mount.
-// Tells the extension the pages exist, so Home cards open them instead of
-// just playing. Set at load, read at click time, so load order doesn't matter.
-window.__betterMixPages = true;
-
 const h = (...a) => Spicetify.React.createElement(...a);
 const useState = (...a) => Spicetify.React.useState(...a);
 const useEffect = (...a) => Spicetify.React.useEffect(...a);
