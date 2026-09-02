@@ -8,20 +8,52 @@
 //
 // Pairs with better-mix.js: generate playlists there, list them here.
 //
-// WHY MATCH ON HEADING TEXT:
-// Those shelves have no stable id, and their titles change with the day and
-// time ("Soundtrack your Tuesday evening" -> "...Wednesday morning"). So we
-// match substrings of the heading rather than exact strings or class names.
+// HOW MIXES ARE FOUND:
+// By the playlists themselves, not the shelf heading -- Spotify-generated id
+// prefix plus "Mix" in the name. Headings change with the day ("Soundtrack
+// your Tuesday evening"), so anything keyed on them would break by Wednesday.
 // ============================================================================
 
 (function homeMixes() {
-  if (!(Spicetify?.Platform?.RootlistAPI && Spicetify?.Menu && Spicetify?.LocalStorage)) {
+  const SRC_KEY = "home-mixes:sources";
+
+  // Defined BEFORE anything else, reading raw localStorage so it needs no
+  // Spicetify at all. If you can call this, the file loaded -- and it tells
+  // you whether the rest has initialised yet. A diagnostic that only exists
+  // once the thing it diagnoses is working isn't much of a diagnostic.
+  window.homeSources ||= () => {
+    let rows = [];
+    try { rows = JSON.parse(localStorage.getItem(SRC_KEY)) || []; } catch {}
+    console.log(`[home-mixes] ${window.__homeMixesReady ? "ready" : "still initialising — give it a few seconds"} · ${rows.length} mixes recorded`);
+    console.table(rows);
+    return rows;
+  };
+
+  // --- Wait for Spicetify ----------------------------------------------------
+  // Polls until the pieces we need exist. After a reload that can take several
+  // seconds, and NOTHING below runs until it passes. Saying so out loud is what
+  // stops "is it broken or just not ready yet" from being a guessing game.
+  const startedAt = (window.__homeMixesStart ??= Date.now());
+  const gate = {
+    RootlistAPI: !!Spicetify?.Platform?.RootlistAPI,
+    Menu: !!Spicetify?.Menu,
+    LocalStorage: !!Spicetify?.LocalStorage,
+  };
+  if (!(gate.RootlistAPI && gate.Menu && gate.LocalStorage)) {
+    const waited = Date.now() - startedAt;
+    if (waited < 400) console.log("[home-mixes] loaded, waiting for Spicetify…");
+    else if (waited > 8000 && Date.now() - (window.__homeMixesWarn || 0) > 8000) {
+      window.__homeMixesWarn = Date.now();
+      console.warn(`[home-mixes] still waiting after ${Math.round(waited / 1000)}s — missing: ` +
+        Object.keys(gate).filter((k) => !gate[k]).join(", "));
+    }
     setTimeout(homeMixes, 300);
     return;
   }
+  window.__homeMixesReady = true;
+  console.log(`[home-mixes] initialised after ${Date.now() - startedAt}ms`);
 
   const HIDE_KEY = "home-mixes:patterns";
-  const SRC_KEY = "home-mixes:sources";
   const SHOW_KEY = "home-mixes:enabled";
   const ROW_ID = "home-mixes-row";
 
