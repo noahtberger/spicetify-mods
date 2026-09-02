@@ -55,6 +55,11 @@ const ICONS = {
   more:  { vb: 24, p: '<path d="M4.5 13.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m15 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m-7.5 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3"/>' },
   // Spotify's own shuffle, from the player bar -- their 16px set.
   shuffle: { vb: 16, p: '<path d="M13.151.922a.75.75 0 1 0-1.06 1.06L13.109 3H11.16a3.75 3.75 0 0 0-2.873 1.34l-6.173 7.356A2.25 2.25 0 0 1 .39 12.5H0V14h.391a3.75 3.75 0 0 0 2.873-1.34l6.173-7.356a2.25 2.25 0 0 1 1.724-.804h1.947l-1.017 1.018a.75.75 0 0 0 1.06 1.06L15.98 3.75zM.391 3.5H0V2h.391c1.109 0 2.16.49 2.873 1.34L4.89 5.277l-.979 1.167-1.796-2.14A2.25 2.25 0 0 0 .39 3.5z"/><path d="m7.5 10.723.98-1.167.957 1.14a2.25 2.25 0 0 0 1.724.804h1.947l-1.017-1.018a.75.75 0 1 1 1.06-1.06l2.829 2.828-2.829 2.828a.75.75 0 1 1-1.06-1.06L13.109 13H11.16a3.75 3.75 0 0 1-2.873-1.34l-.787-.938z"/>' },
+  // Spotify's own, from a playlist page's action row.
+  search: { vb: 16, p: '<path d="M7 1.75a5.25 5.25 0 1 0 0 10.5 5.25 5.25 0 0 0 0-10.5M.25 7a6.75 6.75 0 1 1 12.096 4.12l3.184 3.185a.75.75 0 1 1-1.06 1.06L11.304 12.2A6.75 6.75 0 0 1 .25 7"/>' },
+  list:   { vb: 16, p: '<path d="M15 14.5H5V13h10zm0-5.75H5v-1.5h10zM15 3H5V1.5h10zM3 3H1V1.5h2zm0 11.5H1V13h2zm0-5.75H1v-1.5h2z"/>' },
+  compact: { vb: 16, p: '<path d="M1 2.5h14V4H1zm0 5.25h14v1.5H1zm0 5.25h14v1.5H1z"/>' },
+  tick:   { vb: 16, p: '<path d="m6.5 12.6-4.1-4.1 1.1-1.1 3 3 6-6 1.1 1.1z"/>' },
   // Spotify has no rebuild icon; drawn at 2px stroke to match their weight.
   refresh: { vb: 24, p: '<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 12a8.4 8.4 0 1 1-2.46-5.94"/><path d="M20.9 4.2v4.4h-4.4"/></g>' },
 };
@@ -165,8 +170,22 @@ function Index({ store }) {
 
 function MixPage({ mix }) {
   const BM = window.BetterMix;
-  const tracks = mix.tracks || [];
-  const total = tracks.reduce((a, t) => a + (Number(t.duration) || 0), 0);
+  const all = mix.tracks || [];
+  const q = query.trim().toLowerCase();
+  const cmp = {
+    title: (a, b) => (a.name || "").localeCompare(b.name || ""),
+    artist: (a, b) => (a.artists?.[0]?.name || "").localeCompare(b.artists?.[0]?.name || ""),
+    album: (a, b) => (a.album?.name || "").localeCompare(b.album?.name || ""),
+    duration: (a, b) => (Number(a.duration) || 0) - (Number(b.duration) || 0),
+    popularity: (a, b) => (b.popularity || 0) - (a.popularity || 0),
+  }[sort];
+  const tracks = (() => {
+    let list = all;
+    if (q) list = list.filter((t) => [t.name, t.album?.name, ...(t.artists || []).map((a) => a.name)]
+      .filter(Boolean).join(" ").toLowerCase().includes(q));
+    return cmp ? [...list].sort(cmp) : list;
+  })();
+  const total = all.reduce((a, t) => a + (Number(t.duration) || 0), 0);
   const [busy, setBusy] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
   const [shuffled, setShuffled] = useState(() => !!BM?.getShuffle?.());
@@ -181,7 +200,8 @@ function MixPage({ mix }) {
   };
 
   const play = (i = 0) =>
-    BM?.play ? BM.play(mix, i) : Spicetify.showNotification("Better Mix isn't loaded", true);
+    BM?.play ? BM.play(mix, i, { order: tracks.map((t) => t.uri) })
+             : Spicetify.showNotification("Better Mix isn't loaded", true);
 
   const save = async () => {
     if (mix.savedUri) return go(`/playlist/${idOf(mix.savedUri)}`);
@@ -196,6 +216,32 @@ function MixPage({ mix }) {
     h("a", { className: "bmx-a", onClick: (e) => { e.stopPropagation(); go(path); } }, label);
 
   const accent = useAccent(mix);
+
+  // Sort, view and the search query, persisted like Spotify's are. "Custom
+  // order" is the mix's own order, which is meaningful here: popularity-ranked
+  // with the familiar tracks spliced through it.
+  const SORTS = [
+    ["custom", "Custom order"], ["title", "Title"], ["artist", "Artist"],
+    ["album", "Album"], ["popularity", "Popularity"], ["duration", "Duration"],
+  ];
+  const [sort, setSort] = useState(() => localStorage.getItem("better-mix:sort") || "custom");
+  const [view, setView] = useState(() => localStorage.getItem("better-mix:view") || "list");
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const pick = (setter, key) => (v) => { setter(v); try { localStorage.setItem(key, v); } catch {} };
+  const chooseSort = pick(setSort, "better-mix:sort");
+  const chooseView = pick(setView, "better-mix:view");
+
+  // Close the menu on an outside click or Escape, the way a real one behaves.
+  useEffect(() => {
+    if (!menu) return;
+    const off = (e) => { if (!e.target.closest?.(".bmx-sortwrap")) setMenu(false); };
+    const esc = (e) => e.key === "Escape" && setMenu(false);
+    document.addEventListener("mousedown", off);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", off); document.removeEventListener("keydown", esc); };
+  }, [menu]);
   const iconBtn = (glyphs, title, onClick, extra = "", disabled = false) =>
     h("button", { className: "bmx-iconbtn " + extra, title, "aria-label": title, onClick, disabled },
       sicon(...(Array.isArray(glyphs) ? glyphs : [glyphs])));
@@ -213,7 +259,7 @@ function MixPage({ mix }) {
           h("h1", { className: "bmx-title" }, mix.name),
           h("p", { className: "bmx-desc" }, `Popular songs that fit ${mix.sourceName || "this mix"}, by artists you don't already play.`),
           h("div", { className: "bmx-stats" },
-            h("b", null, "You"), ` • ${tracks.length} songs${total ? `, ${fmtTotal(total)}` : ""}${mix.builtAt ? ` • built ${ago(mix.builtAt)}` : ""}`))),
+            h("b", null, "You"), ` • ${all.length} songs${total ? `, ${fmtTotal(total)}` : ""}${mix.builtAt ? ` • built ${ago(mix.builtAt)}` : ""}`))),
 
       // Icon buttons with tooltips, like Spotify's -- text links read as
       // web-page furniture next to their controls.
@@ -224,18 +270,49 @@ function MixPage({ mix }) {
           mix.savedUri ? "Open the saved playlist" : "Save as a playlist",
           save, mix.savedUri ? "bmx-on" : "", busy),
         iconBtn("refresh", rebuilding ? "Rebuilding…" : "Rebuild this mix", rebuild, rebuilding ? "bmx-spin" : "", rebuilding),
-        iconBtn("more", "Settings", () => BM?.open?.()))),
+        iconBtn("more", "Settings", () => BM?.open?.()),
 
-    h("div", { className: "bmx-table" },
+        // Search and sort sit right of the row, as they do on a playlist page.
+        h("div", { className: "bmx-actions-right" },
+          h("div", { className: "bmx-searchwrap" + (searching || q ? " bmx-open" : "") },
+            h("button", { className: "bmx-iconbtn bmx-searchbtn", title: "Search in mix", "aria-label": "Search in mix",
+              onClick: () => setSearching((v) => !v) }, sicon("search")),
+            h("input", {
+              className: "bmx-searchinput", placeholder: "Search in mix", value: query,
+              onChange: (e) => setQuery(e.target.value),
+              onKeyDown: (e) => { if (e.key === "Escape") { setQuery(""); setSearching(false); } },
+              onBlur: () => { if (!query) setSearching(false); },
+              ref: (el) => { if (el && searching && document.activeElement !== el) el.focus(); },
+            })),
+
+          h("div", { className: "bmx-sortwrap" },
+            h("button", { className: "bmx-sortbtn", onClick: () => setMenu((v) => !v) },
+              h("span", null, SORTS.find(([k]) => k === sort)?.[1] || "Custom order"),
+              sicon(view === "compact" ? "compact" : "list")),
+            menu && h("div", { className: "bmx-menu" },
+              h("div", { className: "bmx-menu-head" }, "Sort by"),
+              SORTS.map(([key, label]) =>
+                h("button", { key, className: "bmx-menu-item" + (sort === key ? " bmx-menu-on" : ""),
+                  onClick: () => { chooseSort(key); setMenu(false); } },
+                  h("span", null, label), sort === key ? sicon("tick") : null)),
+              h("div", { className: "bmx-menu-head" }, "View as"),
+              [["compact", "Compact"], ["list", "List"]].map(([key, label]) =>
+                h("button", { key, className: "bmx-menu-item bmx-menu-view" + (view === key ? " bmx-menu-on" : ""),
+                  onClick: () => { chooseView(key); setMenu(false); } },
+                  sicon(key), h("span", null, label), view === key ? sicon("tick") : null)))))),
+
+    h("div", { className: "bmx-table" + (view === "compact" ? " bmx-compact" : "") },
       h("div", { className: "bmx-thead" },
         h("span", null, "#"), h("span", null, "Title"), h("span", null, "Album"), icon("clock", "bmx-svg bmx-clock")),
+      !tracks.length && h("p", { className: "bmx-empty" }, `No songs match "${query}".`),
       tracks.map((t, i) =>
         h("div", { className: "bmx-tr", key: t.uri || i, onClick: () => play(i), title: "Play from here" },
           h("span", { className: "bmx-num", title: t.why ? `admitted as: ${t.why}` : "" },
             h("span", { className: "bmx-idx" }, i + 1),
             icon("play", "bmx-svg bmx-rowplay")),
           h("span", { className: "bmx-titlecell" },
-            t.image ? h("img", { className: "bmx-thumb", src: t.image, alt: "" }) : h("span", { className: "bmx-thumb" }),
+            view === "compact" ? null
+              : t.image ? h("img", { className: "bmx-thumb", src: t.image, alt: "" }) : h("span", { className: "bmx-thumb" }),
             h("span", { className: "bmx-tt" },
               h("span", { className: "bmx-tname" }, t.name),
               h("span", { className: "bmx-tartists" },

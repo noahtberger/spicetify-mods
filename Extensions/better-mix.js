@@ -366,8 +366,10 @@
   const getShuffle = () => { try { return localStorage.getItem(SHUF_KEY) === "true"; } catch { return false; } };
   const setShuffle = (v) => { try { localStorage.setItem(SHUF_KEY, String(!!v)); } catch {} };
 
+  // opts.order lets the page play what's on screen -- sorted or filtered --
+  // rather than the mix's stored order.
   async function play(mix, startAt = 0, opts = {}) {
-    let all = (mix?.tracks || []).map((t) => t.uri).filter(Boolean);
+    let all = (opts.order || (mix?.tracks || []).map((t) => t.uri)).filter(Boolean);
     if (!all.length) return;
     // With shuffle on, the track you clicked still plays first and the rest
     // are randomised behind it -- what Spotify does when you pick a song in

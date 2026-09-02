@@ -96,3 +96,38 @@
 .bmx-err { white-space: pre-wrap; font-size: 12px; color: var(--spice-subtext, #b3b3b3); background: rgba(255,255,255,.05); padding: 12px; border-radius: 6px; }
 
 .bmx-progress { margin: 16px 0 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; color: var(--spice-subtext, #b3b3b3); background: rgba(255,255,255,.05); }
+
+/* --- right-hand controls: search + sort --- */
+.bmx-actions-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.bmx-searchwrap { display: flex; align-items: center; }
+.bmx-searchinput { width: 0; padding: 0; border: 0; opacity: 0; pointer-events: none;
+                   background: var(--spice-card, #242424); color: var(--spice-text, #fff);
+                   border-radius: 4px; font-size: 14px; height: 32px;
+                   transition: width 200ms ease, opacity 200ms ease, padding 200ms ease; }
+.bmx-searchwrap.bmx-open .bmx-searchinput { width: 200px; padding: 0 12px; opacity: 1; pointer-events: auto; }
+.bmx-searchinput:focus { outline: 1px solid var(--spice-subtext, #b3b3b3); }
+.bmx-searchinput::placeholder { color: var(--spice-subtext, #b3b3b3); }
+
+.bmx-sortwrap { position: relative; }
+.bmx-sortbtn { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 0; background: transparent;
+               color: var(--spice-subtext, #b3b3b3); font-size: 14px; font-weight: 400; cursor: pointer; font-size: 14px; }
+.bmx-sortbtn .bmx-svg svg { width: 16px; height: 16px; }
+.bmx-sortbtn:hover { color: var(--spice-text, #fff); }
+
+.bmx-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; min-width: 200px;
+            padding: 4px; border-radius: 4px; background: var(--spice-card, #282828);
+            box-shadow: 0 16px 24px rgba(0,0,0,.3), 0 6px 8px rgba(0,0,0,.2); }
+.bmx-menu-head { padding: 10px 12px 6px; font-size: 12px; font-weight: 700; color: var(--spice-subtext, #b3b3b3); }
+.bmx-menu-item { display: flex; align-items: center; gap: 12px; width: 100%; height: 40px; padding: 0 12px;
+                 border: 0; border-radius: 2px; background: transparent; cursor: pointer;
+                 color: var(--spice-text, #fff); font-size: 14px; text-align: left; }
+.bmx-menu-item > span:first-of-type { flex: 1; }
+.bmx-menu-item:hover { background: rgba(255,255,255,.1); }
+.bmx-menu-item.bmx-menu-on { color: var(--spice-button, #1ed760); }
+.bmx-menu-item .bmx-svg svg { width: 16px; height: 16px; }
+
+/* --- compact view: no artwork, tighter rows --- */
+.bmx-table.bmx-compact .bmx-thead, .bmx-table.bmx-compact .bmx-tr { grid-template-columns: 40px minmax(0, 6fr) minmax(0, 4fr) 60px; }
+.bmx-table.bmx-compact .bmx-tr { height: 36px; }
+.bmx-table.bmx-compact .bmx-tname { font-size: 14px; }
+.bmx-table.bmx-compact .bmx-titlecell { gap: 8px; }
