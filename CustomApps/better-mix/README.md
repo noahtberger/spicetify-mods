@@ -1,4 +1,10 @@
-# Better Mix
+# Better Mix Pages
+
+**Optional add-on for the Better Mix extension** -- install that first,
+from Marketplace. This adds a page for every mix, laid out like a playlist:
+tracklist, play-from-here, shuffle, search, sort, save.
+
+## What Better Mix does
 
 Spotify's mixes are mostly songs you already play. Better Mix takes each one
 Spotify makes for you, asks Spotify what fits it, and throws out everything
@@ -28,12 +34,8 @@ spicetify apply
 `CustomApps/better-mix` folder to the same place: `~/.config/spicetify/CustomApps/`
 on macOS and Linux, `%APPDATA%\spicetify\CustomApps\` on Windows.)
 
-That one folder carries everything: the sidebar page and the two extensions
-that build the mixes and replace the Home rows. Nothing else to install.
-
-Then open Home once so it can see your Spotify mixes. The first run builds
-them in the background -- a few minutes -- and a counter on the Home rows
-shows it working. After that it refreshes itself daily.
+This folder is only the pages. The mixes themselves come from the Better Mix
+extension, which Marketplace installs in one click -- get that first.
 
 To update later: pull the repo, copy the folder again, `spicetify apply`.
 
