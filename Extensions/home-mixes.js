@@ -77,8 +77,14 @@
 
   // --- Finding shelves -------------------------------------------------------
   // A shelf is a section element; its heading is the first h1/h2/h3 inside.
+  // LEAF sections only. Home has an outer <section> wrapping every shelf, and
+  // since we detect by descendant links, that container "contains" every mix
+  // on the page. Hide it and the whole Home page goes blank -- which is
+  // exactly what happened. A section holding other sections is a container,
+  // not a shelf.
   function shelves() {
-    return [...document.querySelectorAll('section, [data-testid="component-shelf"]')];
+    return [...document.querySelectorAll('section, [data-testid="component-shelf"]')]
+      .filter((s) => !s.querySelector("section"));
   }
 
   function headingOf(el) {
@@ -88,12 +94,15 @@
   // Pull every Spotify-made "* Mix" out of a shelf.
   function mixesIn(shelf) {
     const out = [];
+    let links = 0;
     shelf.querySelectorAll('a[href*="/playlist/"]').forEach((a) => {
       const id = a.getAttribute("href")?.split("/playlist/")[1]?.split(/[?#]/)[0];
       if (!id) return;
+      links++;
       const name = (a.getAttribute("aria-label") || a.title || a.textContent || "").trim();
       if (name && isMix(name, id)) out.push({ uri: "spotify:playlist:" + id, name });
     });
+    out.links = links;   // total playlist cards, so callers can judge the ratio
     return out;
   }
 
@@ -115,8 +124,10 @@
       const mixes = mixesIn(s);
       found.push(...mixes);
 
-      // Two or more means it's a mix shelf, not a stray card in some other row.
-      if (mixes.length >= 2 || pats.some((p) => h.toLowerCase().includes(p))) {
+      // A mix shelf is MOSTLY mixes. "Recently played" can hold a couple of
+      // Daily Mixes among your own playlists -- that row should stay.
+      const mixShelf = mixes.length >= 2 && mixes.length * 2 >= mixes.links;
+      if (mixShelf || pats.some((p) => h.toLowerCase().includes(p))) {
         s.style.display = "none";
         s.dataset.homeMixesHidden = "1";
       }
@@ -232,7 +243,7 @@
   window.homeShelves = () => {
     const rows = shelves()
       .filter((s) => s.id !== ROW_ID && headingOf(s))
-      .map((s) => ({ heading: headingOf(s), mixes: mixesIn(s).length, hidden: s.dataset.homeMixesHidden === "1" }));
+      .map((s) => { const m = mixesIn(s); return { heading: headingOf(s), mixes: m.length, cards: m.links, hidden: s.dataset.homeMixesHidden === "1" }; });
     console.table(rows);
     return rows;
   };
