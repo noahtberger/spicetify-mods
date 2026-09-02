@@ -27,6 +27,13 @@
   const P = () => Spicetify.Platform;
   let logLine = () => {};
 
+  // home-mixes.js records the Spotify mix shelves it hides. Reading them from
+  // storage means this works anywhere, not just while Home is on screen.
+  const spotifyMixes = () => {
+    try { return JSON.parse(Spicetify.LocalStorage.get("home-mixes:sources")) || []; }
+    catch { return []; }
+  };
+
   // --- Reading your listening ------------------------------------------------
   async function myPlaylists() {
     const rl = await P().RootlistAPI.getContents({ limit: 200 });
@@ -154,6 +161,34 @@
     return uri;
   }
 
+  // Spotify already sorts these by mood and activity -- Chill Happy, Driving,
+  // Melancholy. Reusing their grouping is far better than trying to cluster
+  // your library into moods, and the names come out meaningful for free.
+  async function rebuildAll({ limit, total, familiarCount, maxPerArtist }) {
+    const mixes = spotifyMixes().slice(0, limit);
+    if (!mixes.length) {
+      throw new Error("No Spotify mixes recorded yet — open Home once so home-mixes can see them.");
+    }
+
+    const done = [];
+    for (const m of mixes) {
+      logLine(`\n=== ${m.name} ===`);
+      try {
+        const tracks = await buildMix({
+          sourceUri: m.uri, total, familiarCount, maxPerArtist,
+        });
+        const name = "Better " + m.name.replace(/^better\s+/i, "");
+        await saveMix(name, tracks);
+        logLine(`saved "${name}" (${tracks.length} tracks)`);
+        done.push(name);
+      } catch (e) {
+        // One dud mix shouldn't abandon the rest of the run.
+        logLine(`skipped — ${e?.message || e}`);
+      }
+    }
+    return done;
+  }
+
   // --- UI --------------------------------------------------------------------
   async function openMenu(preselect) {
     const wrap = document.createElement("div");
@@ -174,10 +209,12 @@
         <label>Size <input class="bmx-in" id="bmx-total" type="number" min="5" max="100" value="25"></label>
         <label>Ones you know <input class="bmx-in" id="bmx-fam" type="number" min="0" max="20" value="3"></label>
         <label>Max per artist <input class="bmx-in" id="bmx-cap" type="number" min="1" max="5" value="2"></label>
+        <label>How many mixes <input class="bmx-in" id="bmx-count" type="number" min="1" max="20" value="5"></label>
       </div>
       <div class="bmx-actions">
         <button class="bmx-btn" id="bmx-preview">Preview</button>
-        <button class="bmx-btn bmx-primary" id="bmx-create">Create playlist</button>
+        <button class="bmx-btn" id="bmx-create">Create from this playlist</button>
+        <button class="bmx-btn bmx-primary" id="bmx-all">Rebuild my Spotify mixes (${spotifyMixes().length})</button>
       </div>
       <pre class="bmx-log" id="bmx-log"></pre>`;
 
@@ -215,6 +252,24 @@
 
     wrap.querySelector("#bmx-preview").onclick = () => run(false);
     wrap.querySelector("#bmx-create").onclick = () => run(true);
+    wrap.querySelector("#bmx-all").onclick = async () => {
+      logEl.textContent = "";
+      wrap.querySelectorAll("button").forEach((b) => (b.disabled = true));
+      try {
+        const made = await rebuildAll({
+          limit: +val("#bmx-count"),
+          total: +val("#bmx-total"),
+          familiarCount: +val("#bmx-fam"),
+          maxPerArtist: +val("#bmx-cap"),
+        });
+        logLine(`\ndone — ${made.length} playlists built`);
+        Spicetify.showNotification(`Built ${made.length} mixes`);
+      } catch (e) {
+        logLine("\nFAILED: " + (e?.message || e));
+      } finally {
+        wrap.querySelectorAll("button").forEach((b) => (b.disabled = false));
+      }
+    };
   }
 
   const M = '.GenericModal[aria-label="Better Mix"]';

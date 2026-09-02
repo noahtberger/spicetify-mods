@@ -21,6 +21,7 @@
   }
 
   const HIDE_KEY = "home-mixes:patterns";
+  const SRC_KEY = "home-mixes:sources";
   const SHOW_KEY = "home-mixes:enabled";
   const ROW_ID = "home-mixes-row";
 
@@ -53,10 +54,34 @@
       if (!h) continue;
       s.dataset.homeMixesChecked = "1";
       if (pats.some((p) => h.includes(p))) {
+        recordSources(s, headingOf(s));   // capture BEFORE hiding
         s.style.display = "none";
         s.dataset.homeMixesHidden = "1";
       }
     }
+  }
+
+  // Pull the playlist URIs and names out of a shelf and remember them.
+  // Grabbing the name here avoids a second API call later, and these shelves
+  // only exist on Home -- better-mix shouldn't depend on being on that page.
+  function recordSources(shelf, heading) {
+    const found = [];
+    shelf.querySelectorAll('a[href*="/playlist/"]').forEach((a) => {
+      const id = a.getAttribute("href")?.split("/playlist/")[1]?.split(/[?#]/)[0];
+      if (!id) return;
+      const name = (a.getAttribute("aria-label") || a.title || a.textContent || "").trim()
+        || (a.closest("[role='group'],div")?.textContent || "").trim().slice(0, 60);
+      if (name) found.push({ uri: "spotify:playlist:" + id, name, shelf: heading });
+    });
+    if (!found.length) return;
+
+    const byUri = new Map(readSources().map((x) => [x.uri, x]));
+    found.forEach((x) => byUri.set(x.uri, x));
+    try { Spicetify.LocalStorage.set(SRC_KEY, JSON.stringify([...byUri.values()])); } catch {}
+  }
+
+  function readSources() {
+    try { return JSON.parse(Spicetify.LocalStorage.get(SRC_KEY)) || []; } catch { return []; }
   }
 
   function unhideAll() {
@@ -71,7 +96,7 @@
   async function myMixes() {
     const rl = await Spicetify.Platform.RootlistAPI.getContents({ limit: 200 });
     return (rl?.items || []).filter(
-      (p) => String(p?.uri).includes(":playlist:") && /better mix/i.test(p?.name || "")
+      (p) => String(p?.uri).includes(":playlist:") && /^better /i.test(p?.name || "")
     );
   }
 
@@ -172,5 +197,8 @@
     console.log("reset to:", DEFAULT_PATTERNS);
   };
 
-  console.log("[home-mixes] loaded — run homeShelves() to see what's on your Home page");
+  window.homeSources = () => { console.table(readSources()); return readSources(); };
+
+  console.log(`[home-mixes] loaded — ${readSources().length} Spotify mixes recorded. ` +
+    "homeShelves() lists your Home rows, homeSources() lists captured mixes.");
 })();
