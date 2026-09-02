@@ -180,13 +180,27 @@
     logLine(theme
       ? `theme: ${theme.name} script in ${Math.round(theme.share * 100)}% of the source — candidates without it are dropped`
       : `theme: none${topName ? ` (largest non-Latin script share: ${topName} ${Math.round(topShare * 100)}%)` : ""}`);
-    const offTheme = (t) => !!theme && !theme.re.test(textOf(t));
     const artistKeys = (t) => (t?.artists || []).flatMap((a) => [a?.uri, a?.id, a?.name]).filter(Boolean);
     const sourceArtists = new Set(source.flatMap(artistKeys));
 
     logLine("asking Spotify what fits this playlist…");
     const candidates = await recommend(sourceUri, Math.max(150, total * 6));
     if (!candidates.length) throw new Error("The recommender returned nothing for this playlist.");
+
+    // Artist-aware script guard. Plenty of Japanese artists release with
+    // romanised titles ("Kabutomushi — aiko", "Teenager Forever — King Gnu"),
+    // and a plain script test would throw them out with the rap. So an artist
+    // counts as on-script if ANY of their tracks in the pool carries the
+    // script; a romanised track survives when its artist does. Polo G never
+    // has a Japanese-titled song in the pool, so Polo G never survives.
+    const scriptArtists = new Set();
+    if (theme) for (const t of [...source, ...candidates]) if (theme.re.test(textOf(t))) artistKeys(t).forEach((k) => scriptArtists.add(k));
+    let rescued = 0;
+    const offTheme = (t) => {
+      if (!theme || theme.re.test(textOf(t))) return false;
+      if (artistKeys(t).some((k) => scriptArtists.has(k))) { rescued++; return false; }
+      return true;
+    };
 
     // The step Spotify won't do: drop anything you already play.
     const perArtist = new Map();
@@ -205,7 +219,8 @@
       fresh.push(t);
     }
 
-    logLine(`filtered: -${cutTrack} already played, -${cutArtist} your artists, -${cutCap} artist cap` + (theme ? `, -${cutTheme} off-script` : ""));
+    logLine(`filtered: -${cutTrack} already played, -${cutArtist} your artists, -${cutCap} artist cap` +
+      (theme ? `, -${cutTheme} off-script (${rescued} romanised tracks kept via their artists)` : ""));
     logLine(`${fresh.length} genuinely new tracks left`);
     if (!fresh.length) throw new Error("Nothing survived the filter — try a different playlist.");
 
@@ -391,6 +406,7 @@
           id: prev?.id || ("bm-" + String(m.uri).split(":").pop()),
           name, sourceUri: m.uri, sourceName: m.name,
           builtAt: new Date().toISOString(),
+          rules: RULES_VERSION,
           savedUri: prev?.savedUri || null,        // a saved one stays saved
           tracks: tracks.map(slim),
         };
@@ -439,6 +455,9 @@
   // staleness -- rebuilding more often just burns requests for the same input.
   const CUR_KEY = "home-mixes:current";
   const STALE_MS = 24 * 60 * 60 * 1000;
+  // Bump when the selection rules change. Mixes built under older rules get
+  // rebuilt automatically at the next startup instead of waiting a day.
+  const RULES_VERSION = 3;
   let building = false;
   const readCurrent = () => { try { return JSON.parse(localStorage.getItem(CUR_KEY)) || []; } catch { return []; } };
 
@@ -447,7 +466,7 @@
     const store = readVirtual();
     const due = readCurrent().filter((m) => {
       const e = store.find((x) => x.sourceUri === m.uri);
-      return !e || Date.now() - Date.parse(e.builtAt || 0) > STALE_MS;
+      return !e || e.rules !== RULES_VERSION || Date.now() - Date.parse(e.builtAt || 0) > STALE_MS;
     });
     if (!due.length) return;
     building = true;
