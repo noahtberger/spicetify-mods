@@ -64,8 +64,10 @@
   const MIX_ID = /^37i9dQZF1E/;
   const isMix = (name, id) => MIX_ID.test(id) && /\bmix\b/i.test(name);
 
-  // Extra shelves to hide by heading, beyond the auto-detected mix rows.
-  const DEFAULT_PATTERNS = [];
+  // Shelves to hide by heading, beyond the auto-detected mix rows. These are
+  // Spotify's promotional picks -- a single album pushed at you -- not mixes.
+  // Add more from the console with homeHide("heading text").
+  const DEFAULT_PATTERNS = ["picked for you"];
   const patterns = () => {
     try { return JSON.parse(Spicetify.LocalStorage.get(HIDE_KEY)) || DEFAULT_PATTERNS; }
     catch { return DEFAULT_PATTERNS; }
@@ -116,7 +118,8 @@
       if (mixShelf || pats.some((p) => h.toLowerCase().includes(p))) {
         s.style.display = "none";
         s.dataset.homeMixesHidden = "1";
-        s.dataset.homeMixesShelf = h;    // so each of our rows can take the right slot
+        s.dataset.homeMixesShelf = h;                        // so each of our rows can take the right slot
+        s.dataset.homeMixesKind = mixShelf ? "mix" : "pattern"; // pattern-hidden shelves aren't row slots
       }
     }
     if (found.length) record(found);
@@ -250,7 +253,8 @@
   // after the first shelf, and it moves into the real slot once that renders.
   function placeRow(row, shelfHeading) {
     const hidden = [...document.querySelectorAll('[data-home-mixes-hidden="1"]')];
-    const slot = hidden.find((s) => s.dataset.homeMixesShelf === shelfHeading) || hidden[0];
+    const slot = hidden.find((s) => s.dataset.homeMixesShelf === shelfHeading)
+      || hidden.find((s) => s.dataset.homeMixesKind === "mix") || hidden[0];
     if (slot) { slot.parentNode.insertBefore(row, slot); row.dataset.placed = "slot"; return true; }
     const first = shelves().find((s) => headingOf(s));
     if (first) { first.after(row); row.dataset.placed = "fallback"; return true; }
@@ -299,7 +303,8 @@
       if (existing) {
         if (existing.dataset.placed === "fallback") {
           const slot = [...document.querySelectorAll('[data-home-mixes-hidden="1"]')]
-            .find((s) => s.dataset.homeMixesShelf === shelf) || document.querySelector('[data-home-mixes-hidden="1"]');
+            .find((s) => s.dataset.homeMixesShelf === shelf)
+            || document.querySelector('[data-home-mixes-hidden="1"][data-home-mixes-kind="mix"]');
           if (slot && existing.nextElementSibling !== slot) {
             slot.parentNode.insertBefore(existing, slot);
             existing.dataset.placed = "slot";
