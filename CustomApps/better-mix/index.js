@@ -83,8 +83,25 @@ function Cover({ mix, className = "" }) {
     (mix.name || "?").replace(/^better\s+/i, "").slice(0, 2).toUpperCase());
 }
 
+function useProgress() {
+  const [p, setP] = useState(() => window.BetterMix?.progress || { active: false });
+  useEffect(() => {
+    const f = (e) => setP({ ...(e.detail || {}) });
+    window.addEventListener("better-mix:progress", f);
+    return () => window.removeEventListener("better-mix:progress", f);
+  }, []);
+  return p;
+}
+function Progress() {
+  const p = useProgress();
+  if (!p?.active) return null;
+  return h("div", { className: "bmx-progress" },
+    `Building today's mixes — ${p.done} of ${p.total}` + (p.current?.length ? `  ·  ${p.current.join(", ")}` : ""));
+}
+
 function Index({ store }) {
   return h("div", { className: "bmx-page bmx-index" },
+    h(Progress),
     h("div", { className: "bmx-index-head" },
       h("h1", null, "Your mixes"),
       h("button", { className: "bmx-pill", onClick: () => window.BetterMix?.open?.() }, store.length ? "Rebuild" : "Build mixes")),
@@ -128,6 +145,7 @@ function MixPage({ mix }) {
     h("a", { className: "bmx-a", onClick: (e) => { e.stopPropagation(); go(path); } }, label);
 
   return h("div", { className: "bmx-page" },
+    h(Progress),
     // Header: the same shape as a playlist page -- big cover, eyebrow, title,
     // description, then "owner • N songs, duration".
     h("header", { className: "bmx-hero" },

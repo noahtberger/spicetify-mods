@@ -82,20 +82,21 @@
     return c?.items || [];
   }
 
-  // The extender does NOT page -- any offset above 0 comes back 400, which
-  // is what was killing every mix. It may hand back a different set on each
-  // call though, so ask repeatedly at offset 0 and dedupe, stopping the
-  // moment a call adds nothing new.
+  // The extender does NOT page -- any offset above 0 comes back 400. It may
+  // hand back a different set on each call though, so ask repeatedly at
+  // offset 0 and dedupe. Stop as soon as a call is mostly repeats: at that
+  // point each extra call costs a second or two for a handful of tracks.
+  let extenderMax = 100;   // drops to 50 for the whole session the first time 100 is refused
   async function recommend(uri, want) {
     const out = [];
     const seen = new Set();
-    let limit = Math.min(100, Math.max(50, want));
-    for (let call = 0; call < 5 && out.length < want; call++) {
+    let limit = Math.min(extenderMax, Math.max(50, want));
+    for (let call = 0; call < 4 && out.length < want; call++) {
       let batch;
       try {
         batch = await P().PlaylistAPI.getRecommendedTracks(uri, 0, limit);
       } catch (e) {
-        if (limit > 50) { limit = 50; call--; continue; }   // 100 refused: retry once at 50
+        if (limit > 50) { extenderMax = limit = 50; call--; continue; }
         throw new Error(`recommender refused this playlist (HTTP ${e?.status ?? "?"})`);
       }
       let added = 0;
@@ -103,7 +104,7 @@
         if (t?.uri && !seen.has(t.uri)) { seen.add(t.uri); out.push(t); added++; }
       }
       logLine(`  +${added} candidates (${out.length} total)`);
-      if (added === 0) break;
+      if (added < Math.max(5, (batch?.length || 0) * 0.15)) break;
     }
     return out;
   }
@@ -112,9 +113,14 @@
   // Your recent listening and library don't change between one mix and the
   // next, so fetch them once and reuse for a few minutes. Building ten mixes
   // used to mean ten identical 300-track library reads.
-  let base = null, baseAt = 0;
+  let base = null, baseAt = 0, basePromise = null;
   async function baseKnown() {
     if (base && Date.now() - baseAt < 10 * 60 * 1000) return base;
+    if (basePromise) return basePromise;          // parallel builds share one fetch
+    basePromise = fetchBase().finally(() => { basePromise = null; });
+    return basePromise;
+  }
+  async function fetchBase() {
     const tracks = new Set(), artists = new Set();
     const note = (t) => {
       if (t?.uri) tracks.add(t.uri);
@@ -135,11 +141,11 @@
   // Everything we subtract for ONE mix: the shared base plus the source
   // playlist's own tracks and artists -- you asked for songs by OTHER artists
   // that fit, not more of the same ones.
-  async function knownStuff(sourceUri) {
+  async function knownStuff(sourceUri, sourceTracks) {
     const b = await baseKnown();
     const tracks = new Set(b.tracks), artists = new Set(b.artists);
     try {
-      (await playlistTracks(sourceUri)).forEach((t) => {
+      (sourceTracks || await playlistTracks(sourceUri)).forEach((t) => {
         if (t?.uri) tracks.add(t.uri);
         (t?.artists || []).forEach((a) => a && artists.add(a.uri || a.id));
       });
@@ -152,10 +158,9 @@
   const shuffle = (a) => a.map((v) => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map((p) => p[1]);
 
   async function buildMix({ sourceUri, total, familiarCount, maxPerArtist }) {
-    logLine("gathering what you already listen to…");
-    const known = await knownStuff(sourceUri);
-
     const source = (await playlistTracks(sourceUri).catch(() => [])).filter((t) => t?.uri).map(normalize);
+    logLine("gathering what you already listen to…");
+    const known = await knownStuff(sourceUri, source);
     logLine(`source: ${source.length} tracks — e.g. ${source.slice(0, 3).map((t) => `${t.name} — ${(t.artists || []).map((a) => a.name).join(", ")}`).join("  ·  ")}`);
 
     // Script-based theme guard. Some of Spotify's mixes are defined by language
@@ -184,7 +189,7 @@
     const sourceArtists = new Set(source.flatMap(artistKeys));
 
     logLine("asking Spotify what fits this playlist…");
-    const candidates = await recommend(sourceUri, Math.max(150, total * 6));
+    const candidates = await recommend(sourceUri, Math.max(120, total * 4));
     if (!candidates.length) throw new Error("The recommender returned nothing for this playlist.");
 
     // Artist-aware script guard. Plenty of Japanese artists release with
@@ -393,35 +398,57 @@
   // Spotify already sorts these by mood and activity -- Chill Happy, Driving,
   // Melancholy. Reusing their grouping is far better than trying to cluster
   // your library into moods, and the names come out meaningful for free.
-  async function rebuildThese(mixes, { total, familiarCount, maxPerArtist }) {
+  let progress = { active: false, done: 0, total: 0, current: [] };
+  const emitProgress = () => window.dispatchEvent(new CustomEvent("better-mix:progress", { detail: { ...progress } }));
+  const fmtSecs = (ms) => { const x = Math.round(ms / 1000); return x >= 60 ? `${Math.floor(x / 60)}m ${x % 60}s` : `${x}s`; };
+
+  async function rebuildThese(mixes, { total, familiarCount, maxPerArtist }, { concurrency = 1 } = {}) {
     const store = readVirtual();
     const done = [];
-    for (const m of mixes) {
-      if (done.length) await sleep(300);      // let the UI breathe between mixes
-      logLine(`\n=== ${m.name} ===`);
-      try {
-        const tracks = await buildMix({ sourceUri: m.uri, total, familiarCount, maxPerArtist });
-        const name = "Better " + m.name.replace(/^better\s+/i, "");
-        const prev = store.find((x) => x.sourceUri === m.uri);
-        const entry = {
-          id: prev?.id || ("bm-" + String(m.uri).split(":").pop()),
-          name, sourceUri: m.uri, sourceName: m.name,
-          builtAt: new Date().toISOString(),
-          rules: RULES_VERSION,
-          savedUri: prev?.savedUri || null,        // a saved one stays saved
-          tracks: tracks.map(slim),
-        };
-        if (prev) Object.assign(prev, entry); else store.push(entry);
-        writeVirtual(store);                       // the row updates after each one
-        const byWhy = {};
-        tracks.forEach((t) => { byWhy[t.why || "?"] = (byWhy[t.why || "?"] || 0) + 1; });
-        logLine(`built "${name}" (${tracks.length} tracks): ` + Object.entries(byWhy).map(([k, v]) => `${v} ${k}`).join(", "));
-        done.push(name);
-      } catch (e) {
-        const where = e?.requestUrl ? ` at ${String(e.requestUrl).split("/").slice(-2).join("/")}` : "";
-        logLine(`skipped — ${e?.message || e?.name || e}${e?.status ? ` (HTTP ${e.status})` : ""}${where}`);
+    const t0 = Date.now();
+    let next = 0;
+    progress = { active: true, done: 0, total: mixes.length, current: [] }; emitProgress();
+
+    // A small worker pool: the internal APIs handle two builds at once fine,
+    // and it roughly halves a big morning run.
+    const worker = async () => {
+      while (next < mixes.length) {
+        const m = mixes[next++];
+        const t1 = Date.now();
+        progress.current.push(m.name); emitProgress();
+        logLine(`\n=== ${m.name} ===`);
+        try {
+          const tracks = await buildMix({ sourceUri: m.uri, total, familiarCount, maxPerArtist });
+          const name = "Better " + m.name.replace(/^better\s+/i, "");
+          const prev = store.find((x) => x.sourceUri === m.uri);
+          const entry = {
+            id: prev?.id || ("bm-" + String(m.uri).split(":").pop()),
+            name, sourceUri: m.uri, sourceName: m.name,
+            builtAt: new Date().toISOString(),
+            rules: RULES_VERSION,
+            savedUri: prev?.savedUri || null,        // a saved one stays saved
+            tracks: tracks.map(slim),
+          };
+          if (prev) Object.assign(prev, entry); else store.push(entry);
+          writeVirtual(store);                       // the row updates after each one
+          const byWhy = {};
+          tracks.forEach((t) => { byWhy[t.why || "?"] = (byWhy[t.why || "?"] || 0) + 1; });
+          logLine(`built "${name}" (${tracks.length} tracks) in ${fmtSecs(Date.now() - t1)}: ` +
+            Object.entries(byWhy).map(([k, v]) => `${v} ${k}`).join(", "));
+          done.push(name);
+        } catch (e) {
+          const where = e?.requestUrl ? ` at ${String(e.requestUrl).split("/").slice(-2).join("/")}` : "";
+          logLine(`skipped — ${e?.message || e?.name || e}${e?.status ? ` (HTTP ${e.status})` : ""}${where}`);
+        } finally {
+          progress.done++; progress.current = progress.current.filter((n) => n !== m.name); emitProgress();
+        }
+        if (next < mixes.length) await sleep(300);   // let the UI breathe between mixes
       }
-    }
+    };
+    await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, mixes.length)) }, worker));
+
+    progress = { active: false, done: mixes.length, total: mixes.length, current: [] }; emitProgress();
+    logLine(`\ndone: ${done.length}/${mixes.length} mixes in ${fmtSecs(Date.now() - t0)}`);
     return done;
   }
 
@@ -488,7 +515,7 @@
     Spicetify.showNotification(`Building today's mixes (${due.length}) — a few minutes in the background`);
     const prevLog = logLine;
     logLine = (m) => console.log("[better-mix]", m);
-    try { await rebuildThese(due, settings()); Spicetify.showNotification("Today's mixes are ready"); }
+    try { await rebuildThese(due, settings(), { concurrency: 2 }); Spicetify.showNotification("Today's mixes are ready"); }
     catch (e) { console.warn("[better-mix] auto-build failed:", e); }
     finally { logLine = prevLog; building = false; }
   }
@@ -632,7 +659,7 @@
   }
 
   // Shared surface for home-mixes.js (and for poking at from the console).
-  window.BetterMix = { ready: true, open: () => openMenu(), rebuildAll, rebuildOne, saveVirtual, play, virtual: readVirtual };
+  window.BetterMix = { ready: true, open: () => openMenu(), rebuildAll, rebuildOne, saveVirtual, play, virtual: readVirtual, get progress() { return { ...progress }; } };
 
   console.log(`[better-mix] loaded — ${readVirtual().length} mixes in store`);
   } catch (e) {

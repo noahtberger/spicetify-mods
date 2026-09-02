@@ -297,7 +297,7 @@
     row.innerHTML = `
       <div class="hmx-head">
         <h2 class="hmx-heading">${esc(title)}</h2>
-        <button class="hmx-rebuild hmx-showall">Show all</button>
+        <span><span class="hmx-progress"></span><button class="hmx-rebuild hmx-showall">Show all</button></span>
       </div>
       <div class="hmx-strip"></div>`;
     row.querySelector(".hmx-showall").onclick = () => Spicetify.Platform.History.push("/better-mix");
@@ -352,6 +352,11 @@
 
   const redraw = () => { document.querySelectorAll(".hmx-row").forEach((r) => r.remove()); schedule(); };
   window.addEventListener("better-mix:updated", redraw);
+  window.addEventListener("better-mix:progress", (e) => {
+    const p = e.detail || {};
+    const txt = p.active ? `building ${p.done} of ${p.total}…` : "";
+    document.querySelectorAll(".hmx-progress").forEach((el) => (el.textContent = txt));
+  });
 
   // --- Keeping up with navigation -------------------------------------------
   let scheduled = false;
@@ -374,6 +379,7 @@
     .hmx-row { padding: 8px 0 24px; }
     .hmx-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
     .hmx-heading { font-size: 24px; font-weight: 700; margin: 0; color: var(--spice-text, #fff); }
+    .hmx-progress { font-size: 13px; color: var(--spice-subtext, #b3b3b3); }
     .hmx-rebuild { margin-left: 18px; background: transparent; border: 0; color: var(--spice-subtext, #b3b3b3); font-size: 14px; font-weight: 700; cursor: pointer; }
     .hmx-rebuild:hover { color: var(--spice-text, #fff); text-decoration: underline; }
     .hmx-strip { display: flex; gap: 18px; overflow-x: auto; padding-bottom: 6px; }
