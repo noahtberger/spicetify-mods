@@ -186,7 +186,14 @@ window.__betterMixExtensionLoaded = true;
   // --- The algorithm ---------------------------------------------------------
   const shuffle = (a) => a.map((v) => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map((p) => p[1]);
 
-  async function buildMix({ sourceUri, total, familiarCount, maxPerArtist }) {
+  // Ranking purely by popularity gave every mix the same famous handful --
+  // one track landed in 25 of 80 mixes. `used` counts where each track has
+  // already gone, and each prior use costs it 12 popularity points, so an
+  // overused 92 falls behind a fresh 85 but can still win if nothing else
+  // fits. A soft penalty, not a ban: genuinely similar mixes (Hype Workout,
+  // Hype Running Rap) should still share some songs.
+  const SPREAD_PENALTY = 12;
+  async function buildMix({ sourceUri, total, familiarCount, maxPerArtist, used = new Map() }) {
     const source = (await playlistTracks(sourceUri).catch(() => [])).filter((t) => t?.uri).map(normalize);
     logLine("gathering what you already listen to…");
     const known = await knownStuff(sourceUri, source);
@@ -241,7 +248,8 @@ window.__betterMixExtensionLoaded = true;
     const fresh = [];
     let cutTrack = 0, cutArtist = 0, cutCap = 0, cutTheme = 0;
 
-    for (const t of candidates.sort((a, b) => (b.popularity || 0) - (a.popularity || 0))) {
+    const score = (t) => (t.popularity || 0) - SPREAD_PENALTY * (used.get(t.uri) || 0);
+    for (const t of candidates.sort((a, b) => score(b) - score(a))) {
       if (known.tracks.has(t.uri)) { cutTrack++; continue; }
       if ((t.artists || []).some((a) => known.artists.has(a.uri || a.id))) { cutArtist++; continue; }
       if (offTheme(t)) { cutTheme++; continue; }
@@ -255,7 +263,8 @@ window.__betterMixExtensionLoaded = true;
 
     logLine(`filtered: -${cutTrack} already played, -${cutArtist} your artists, -${cutCap} artist cap` +
       (theme ? `, -${cutTheme} off-script (${rescued} romanised tracks kept via their artists)` : ""));
-    logLine(`${fresh.length} genuinely new tracks left`);
+    const reused = fresh.filter((t) => used.get(t.uri)).length;
+    logLine(`${fresh.length} genuinely new tracks left` + (reused ? ` (${reused} also in another mix)` : ""));
     if (!fresh.length) throw new Error("Nothing survived the filter — try a different playlist.");
 
     // If the strict pass can't fill the mix, loosen in stages rather than
@@ -449,6 +458,14 @@ window.__betterMixExtensionLoaded = true;
 
   async function rebuildThese(mixes, { total, familiarCount, maxPerArtist }, { concurrency = 1 } = {}) {
     const store = readVirtual();
+    // Seeded from the mixes that already exist, so rebuilding a few spreads
+    // away from the rest rather than re-concentrating on the same songs.
+    const rebuilding = new Set(mixes.map((m) => m.uri));
+    const used = new Map();
+    for (const e of store) {
+      if (rebuilding.has(e.sourceUri)) continue;
+      for (const t of e.tracks || []) used.set(t.uri, (used.get(t.uri) || 0) + 1);
+    }
     const done = [];
     const t0 = Date.now();
     let next = 0;
@@ -463,7 +480,8 @@ window.__betterMixExtensionLoaded = true;
         progress.current.push(m.name); emitProgress();
         logLine(`\n=== ${m.name} ===`);
         try {
-          const tracks = await buildMix({ sourceUri: m.uri, total, familiarCount, maxPerArtist });
+          const tracks = await buildMix({ sourceUri: m.uri, total, familiarCount, maxPerArtist, used });
+          tracks.forEach((t) => used.set(t.uri, (used.get(t.uri) || 0) + 1));
           const name = "Better " + m.name.replace(/^better\s+/i, "");
           const prev = store.find((x) => x.sourceUri === m.uri);
           const entry = {
@@ -535,7 +553,7 @@ window.__betterMixExtensionLoaded = true;
   let enabled = (() => { try { return localStorage.getItem(ENABLED_KEY) !== "false"; } catch { return true; } })();
   // Bump when the selection rules change. Mixes built under older rules get
   // rebuilt automatically at the next startup instead of waiting a day.
-  const RULES_VERSION = 3;
+  const RULES_VERSION = 4;
   let building = false;
   const readCurrent = () => { try { return JSON.parse(localStorage.getItem(CUR_KEY)) || []; } catch { return []; } };
 
