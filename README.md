@@ -5,6 +5,20 @@ Two [Spicetify](https://spicetify.app) extensions for the Spotify desktop client
 Plain JavaScript — no build step, no Node dependency. Spotify's desktop client
 is a web app, and Spicetify injects these files straight into it.
 
+## Better Mix (custom app)
+
+The main event: automatic better versions of every mix Spotify makes for you,
+shown on Home in place of Spotify's rows. It's a custom app that carries its
+two extensions with it (`subfiles_extension`), so it installs as one thing:
+
+```bash
+./sync-app.sh                                # copies CustomApps/ into Spicetify's folder
+spicetify config custom_apps better-mix
+spicetify apply
+```
+
+Details in [CustomApps/better-mix/README.md](CustomApps/better-mix/README.md).
+
 ## Extensions
 
 ### `sleep-timer.js`

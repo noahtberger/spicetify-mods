@@ -66,9 +66,15 @@
   // home-mixes.js records the Spotify mix shelves it hides. Reading them from
   // storage means this works anywhere, not just while Home is on screen.
   const isMix = (x) => /^37i9dQZF1E/.test(String(x?.uri).split(":").pop()) && /\bmix(\s+\d+)?\s*$/i.test(String(x?.name || "").trim());
+  // Only mixes Spotify has actually shown in the last 30 days. Anything older
+  // is one they've stopped offering -- no point rebuilding it weekly.
+  const RECENT_MS = 30 * 24 * 60 * 60 * 1000;
   const spotifyMixes = () => {
-    try { return (JSON.parse(Spicetify.LocalStorage.get("home-mixes:sources")) || []).filter(isMix); }
-    catch { return []; }
+    try {
+      const now = Date.now();
+      return (JSON.parse(Spicetify.LocalStorage.get("home-mixes:sources")) || [])
+        .filter(isMix).filter((x) => !x.seenAt || now - x.seenAt < RECENT_MS);
+    } catch { return []; }
   };
 
   // --- Reading your listening ------------------------------------------------
@@ -507,6 +513,26 @@
   let building = false;
   const readCurrent = () => { try { return JSON.parse(localStorage.getItem(CUR_KEY)) || []; } catch { return []; } };
 
+  // Keep the store bounded. It was 1.5 MB at 78 mixes and grew with every
+  // mix Spotify ever showed, rewritten on every build. A mix whose source
+  // hasn't been on Home in 30 days is dropped unless it was saved; a hard cap
+  // on unsaved entries, newest first, is the backstop.
+  const STORE_CAP = 120;
+  function pruneStore(reason) {
+    const store = readVirtual();
+    const live = new Set([...spotifyMixes().map((m) => m.uri), ...readCurrent().map((m) => m.uri)]);
+    let kept = store.filter((e) => e.savedUri || live.has(e.sourceUri));
+    const unsaved = kept.filter((e) => !e.savedUri).sort((a, b) => Date.parse(b.builtAt || 0) - Date.parse(a.builtAt || 0));
+    if (unsaved.length > STORE_CAP) {
+      const drop = new Set(unsaved.slice(STORE_CAP).map((e) => e.id));
+      kept = kept.filter((e) => !drop.has(e.id));
+    }
+    if (kept.length !== store.length) {
+      console.log(`[better-mix] pruned ${store.length - kept.length} stale mix(es) — ${reason}`);
+      writeVirtual(kept);
+    }
+  }
+
   // Two tiers, no button anywhere:
   //   daily  -- the six Daily Mixes plus whatever Spotify is showing on Home
   //             right now (10-12 mixes): rebuilt at the first startup of each
@@ -542,11 +568,11 @@
     logLine = (m) => console.log("[better-mix]", m);
     try { await rebuildThese(due, settings(), { concurrency: 2 }); Spicetify.showNotification("Today's mixes are ready"); }
     catch (e) { console.warn("[better-mix] auto-build failed:", e); }
-    finally { logLine = prevLog; building = false; }
+    finally { logLine = prevLog; building = false; pruneStore("after build"); }
   }
   window.addEventListener("home-mixes:current", () => autoBuild("Home changed"));
   setInterval(() => autoBuild("daily refresh"), 60 * 60 * 1000);
-  setTimeout(() => autoBuild("startup"), 4000);
+  setTimeout(() => { pruneStore("startup"); autoBuild("startup"); }, 4000);
 
   // Promote a virtual mix to a real playlist. Called from the card's "save".
   async function saveVirtual(id) {

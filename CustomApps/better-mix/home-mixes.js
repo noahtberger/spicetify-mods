@@ -191,10 +191,17 @@
     document.querySelectorAll(".hmx-row").forEach((r) => r.remove());   // redraw with the new set
   }
 
+  // Merge into the RAW list (never the name-filtered one -- that's how a bad
+  // rule once deleted every Daily Mix), stamping when each was last seen so
+  // mixes Spotify stops offering can age out.
   function record(found) {
-    const byUri = new Map(readSources().map((x) => [x.uri, x]));
-    found.forEach((x) => byUri.set(x.uri, x));
+    const now = Date.now();
+    const byUri = new Map(readSourcesRaw().map((x) => [x.uri, x]));
+    found.forEach((x) => byUri.set(x.uri, { ...(byUri.get(x.uri) || {}), ...x, seenAt: now }));
     try { Spicetify.LocalStorage.set(SRC_KEY, JSON.stringify([...byUri.values()])); } catch {}
+  }
+  function readSourcesRaw() {
+    try { return JSON.parse(Spicetify.LocalStorage.get(SRC_KEY)) || []; } catch { return []; }
   }
   // Filtered through the current rule, so entries recorded by older versions
   // (genre links, your own playlists) can't leak back in.
@@ -401,10 +408,15 @@
   // regressed it silently deleted every Daily Mix from storage. Filtering
   // happens on read (readSources), so a bad rule only hides entries until it's
   // fixed. Startup only drops entries whose id isn't Spotify-generated at all.
+  // Startup housekeeping: drop non-Spotify ids, stamp entries recorded before
+  // seenAt existed, and forget sources not seen on Home for 90 days.
   try {
-    const raw = JSON.parse(Spicetify.LocalStorage.get(SRC_KEY)) || [];
-    const kept = raw.filter((x) => MIX_ID.test(String(x?.uri).split(":").pop()));
-    if (kept.length !== raw.length) Spicetify.LocalStorage.set(SRC_KEY, JSON.stringify(kept));
+    const now = Date.now(), OLD = 90 * 24 * 60 * 60 * 1000;
+    const kept = readSourcesRaw()
+      .filter((x) => MIX_ID.test(String(x?.uri).split(":").pop()))
+      .map((x) => ({ ...x, seenAt: x.seenAt || now }))
+      .filter((x) => now - x.seenAt < OLD);
+    Spicetify.LocalStorage.set(SRC_KEY, JSON.stringify(kept));
   } catch {}
 
   new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
