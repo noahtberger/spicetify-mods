@@ -69,3 +69,5 @@
 .bmx-card-name { margin-top: 16px; font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bmx-card-sub { margin-top: 4px; font-size: 14px; color: var(--spice-subtext, #b3b3b3); }
 .bmx-empty { color: var(--spice-subtext, #b3b3b3); }
+
+.bmx-err { white-space: pre-wrap; font-size: 12px; color: var(--spice-subtext, #b3b3b3); background: rgba(255,255,255,.05); padding: 12px; border-radius: 6px; }

@@ -42,8 +42,13 @@ const icon = (name, cls = "bmx-svg") =>
 // won't remount on its own. Subscribe to History and re-render on change.
 function useLocation() {
   const H = Spicetify.Platform.History;
-  const [loc, setLoc] = useState(H.location);
-  useEffect(() => H.listen((l) => setLoc(l)), []);
+  const [loc, setLoc] = useState(() => H.location);
+  useEffect(() => {
+    // Newer history versions hand the listener {location, action}, older
+    // ones hand the location itself. Accept either.
+    const un = H.listen((x) => setLoc(x?.location ?? x));
+    return typeof un === "function" ? un : undefined;
+  }, []);
   return loc;
 }
 // better-mix.js fires this after every write, so a rebuild or a save shows
@@ -156,4 +161,20 @@ function App() {
   return mix ? h(MixPage, { mix, key: mix.id }) : h(Index, { store });
 }
 
-const render = () => h(App);
+// Catches anything App throws and prints it on the page, instead of Spotify's
+// generic "something went wrong". Defined lazily because it extends
+// Spicetify.React.Component, which doesn't exist when this file loads.
+let Boundary;
+const boundary = () => Boundary ||= class extends Spicetify.React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return h("div", { className: "bmx-page" },
+      h("h2", null, "Better Mix hit an error"),
+      h("pre", { className: "bmx-err" }, String(this.state.err?.stack || this.state.err)),
+      h("button", { className: "bmx-pill", onClick: () => this.setState({ err: null }) }, "Try again"));
+  }
+};
+
+const render = () => h(boundary(), null, h(App));

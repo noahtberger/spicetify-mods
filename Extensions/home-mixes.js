@@ -81,7 +81,7 @@
   function shelves() {
     const root = document.querySelector(".main-view-container") || document;
     return [...root.querySelectorAll('section, [data-testid="component-shelf"]')]
-      .filter((s) => !s.querySelector("section"));
+      .filter((s) => !s.querySelector("section") && !s.classList.contains("hmx-row"));
   }
   const headingOf = (el) => el.querySelector("h1,h2,h3")?.textContent?.trim() || "";
 
@@ -104,7 +104,7 @@
     const pats = patterns().map((p) => p.toLowerCase());
     const found = [];
     for (const s of shelves()) {
-      if (s.id === ROW_ID || s.dataset.homeMixesChecked === "1") continue;
+      if (s.classList.contains("hmx-row") || s.dataset.homeMixesChecked === "1") continue;
       const h = headingOf(s);
       if (!h) continue;
       s.dataset.homeMixesChecked = "1";
@@ -116,6 +116,7 @@
       if (mixShelf || pats.some((p) => h.toLowerCase().includes(p))) {
         s.style.display = "none";
         s.dataset.homeMixesHidden = "1";
+        s.dataset.homeMixesShelf = h;    // so each of our rows can take the right slot
       }
     }
     if (found.length) record(found);
@@ -124,7 +125,8 @@
     // the ones this pass checked, or a shelf that renders late would replace
     // the list instead of joining it. better-mix builds from this.
     if (onHome()) {
-      const current = [...document.querySelectorAll('[data-home-mixes-hidden="1"]')].flatMap((s) => mixesIn(s));
+      const current = [...document.querySelectorAll('[data-home-mixes-hidden="1"]')]
+        .flatMap((s) => mixesIn(s).map((m) => ({ ...m, shelf: s.dataset.homeMixesShelf || headingOf(s) })));
       if (current.length) writeCurrent(current);
     }
   }
@@ -132,12 +134,12 @@
   const CUR_KEY = "home-mixes:current";
   const readCurrent = () => { try { return JSON.parse(localStorage.getItem(CUR_KEY)) || []; } catch { return []; } };
   function writeCurrent(list) {
-    const next = JSON.stringify(list.map((m) => ({ uri: m.uri, name: m.name })));
+    const next = JSON.stringify(list.map((m) => ({ uri: m.uri, name: m.name, shelf: m.shelf || "" })));
     let prev = null; try { prev = localStorage.getItem(CUR_KEY); } catch {}
     if (prev === next) return;
     try { localStorage.setItem(CUR_KEY, next); } catch {}
     window.dispatchEvent(new Event("home-mixes:current"));   // better-mix listens
-    document.getElementById(ROW_ID)?.remove();               // redraw with the new set
+    document.querySelectorAll(".hmx-row").forEach((r) => r.remove());   // redraw with the new set
   }
 
   function record(found) {
@@ -172,7 +174,7 @@
     window.BetterMix?.play ? window.BetterMix.play(mix, startAt)
                            : Spicetify.showNotification("Better Mix isn't loaded", true);
   const openMix = (mix) =>
-    Spicetify.Platform.History.push({ pathname: "/better-mix", search: `?id=${mix.id}`, state: { id: mix.id } });
+    Spicetify.Platform.History.push(`/better-mix?id=${encodeURIComponent(mix.id)}`, { id: mix.id });
 
   const openPlaylist = (uri) =>
     Spicetify.Platform.History.push(`/playlist/${String(uri).split(":").pop()}`);
@@ -242,57 +244,74 @@
     return /^\/?(home)?\/?$/.test(path);
   };
 
-  // Put the row where Spotify's mix row WAS -- directly above the first shelf
-  // we hid -- so it sits below the chips and "Jump back in" like theirs did.
-  // If no hidden shelf exists yet (Home loads shelves progressively), fall
-  // back to after the first shelf and move into the real slot once it appears.
-  function placeRow(row) {
-    const slot = document.querySelector('[data-home-mixes-hidden="1"]');
+  // Put a row where the shelf it replaces WAS. Daily Mixes and the mood mixes
+  // live in different Spotify shelves, so each of our rows goes into its own
+  // slot; if the exact shelf isn't found, any hidden shelf; failing that,
+  // after the first shelf, and it moves into the real slot once that renders.
+  function placeRow(row, shelfHeading) {
+    const hidden = [...document.querySelectorAll('[data-home-mixes-hidden="1"]')];
+    const slot = hidden.find((s) => s.dataset.homeMixesShelf === shelfHeading) || hidden[0];
     if (slot) { slot.parentNode.insertBefore(row, slot); row.dataset.placed = "slot"; return true; }
-    const first = shelves().find((s) => s.id !== ROW_ID && headingOf(s));
+    const first = shelves().find((s) => headingOf(s));
     if (first) { first.after(row); row.dataset.placed = "fallback"; return true; }
     return false;
   }
 
-  function injectRow() {
-    if (!enabled) return;
-    const existing = document.getElementById(ROW_ID);
-    if (!onHome()) { existing?.remove(); return; }
+  const isDaily = (name) => /^daily mix/i.test(String(name).replace(/^better\s+/i, ""));
 
-    // Better versions of exactly the mixes we hid, in the same order. Ones
-    // still building show as placeholders.
-    const store = readVirtual();
-    const items = readCurrent().map((c) =>
-      store.find((m) => m.sourceUri === c.uri) ||
-      { pending: true, name: "Better " + String(c.name).replace(/^better\s+/i, "") });
-    if (!items.length) { existing?.remove(); return; }
-
-    if (existing) {
-      if (existing.dataset.placed === "fallback") {
-        const slot = document.querySelector('[data-home-mixes-hidden="1"]');
-        if (slot && existing.nextElementSibling !== slot) {
-          slot.parentNode.insertBefore(existing, slot);
-          existing.dataset.placed = "slot";
-        }
-      }
-      return;
-    }
-
+  function buildRow(id, title, items) {
     const row = document.createElement("section");
-    row.id = ROW_ID;
+    row.id = id;
+    row.className = "hmx-row";
     row.innerHTML = `
       <div class="hmx-head">
-        <h2 class="hmx-heading">Your mixes</h2>
-        <button class="hmx-rebuild" id="hmx-showall">Show all</button>
+        <h2 class="hmx-heading">${esc(title)}</h2>
+        <button class="hmx-rebuild hmx-showall">Show all</button>
       </div>
       <div class="hmx-strip"></div>`;
-    row.querySelector("#hmx-showall").onclick = () => Spicetify.Platform.History.push("/better-mix");
+    row.querySelector(".hmx-showall").onclick = () => Spicetify.Platform.History.push("/better-mix");
     const strip = row.querySelector(".hmx-strip");
     items.forEach((m) => strip.appendChild(m.pending ? pendingCard(m.name) : card(m)));
-    placeRow(row);   // nothing to anchor to yet -> try again on the next pass
+    return row;
   }
 
-  const redraw = () => { document.getElementById(ROW_ID)?.remove(); schedule(); };
+  function injectRow() {
+    if (!enabled) return;
+    if (!onHome()) { document.querySelectorAll(".hmx-row").forEach((r) => r.remove()); return; }
+
+    // Better versions of exactly the mixes we hid, in the same order. Ones
+    // still building show as placeholders. Split into Daily Mixes and the rest.
+    const store = readVirtual();
+    const items = readCurrent().map((c) => ({
+      shelf: c.shelf,
+      ...(store.find((m) => m.sourceUri === c.uri) ||
+          { pending: true, name: "Better " + String(c.name).replace(/^better\s+/i, "") }),
+    }));
+    const groups = [
+      { id: ROW_ID + "-daily", title: "Your daily mixes", items: items.filter((m) => isDaily(m.name)) },
+      { id: ROW_ID + "-other", title: "Your mixes",       items: items.filter((m) => !isDaily(m.name)) },
+    ];
+
+    for (const g of groups) {
+      const existing = document.getElementById(g.id);
+      if (!g.items.length) { existing?.remove(); continue; }
+      const shelf = g.items.find((m) => m.shelf)?.shelf || "";
+      if (existing) {
+        if (existing.dataset.placed === "fallback") {
+          const slot = [...document.querySelectorAll('[data-home-mixes-hidden="1"]')]
+            .find((s) => s.dataset.homeMixesShelf === shelf) || document.querySelector('[data-home-mixes-hidden="1"]');
+          if (slot && existing.nextElementSibling !== slot) {
+            slot.parentNode.insertBefore(existing, slot);
+            existing.dataset.placed = "slot";
+          }
+        }
+        continue;
+      }
+      placeRow(buildRow(g.id, g.title, g.items), shelf);   // no anchor yet -> next pass
+    }
+  }
+
+  const redraw = () => { document.querySelectorAll(".hmx-row").forEach((r) => r.remove()); schedule(); };
   window.addEventListener("better-mix:updated", redraw);
 
   // --- Keeping up with navigation -------------------------------------------
@@ -313,7 +332,7 @@
   // --- Styles ------------------------------------------------------------------
   const css = document.createElement("style");
   css.textContent = `
-    #${ROW_ID} { padding: 8px 0 24px; }
+    .hmx-row { padding: 8px 0 24px; }
     .hmx-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
     .hmx-heading { font-size: 24px; font-weight: 700; margin: 0; color: var(--spice-text, #fff); }
     .hmx-rebuild { margin-left: 18px; background: transparent; border: 0; color: var(--spice-subtext, #b3b3b3); font-size: 14px; font-weight: 700; cursor: pointer; }
@@ -351,14 +370,14 @@
     self.setState(enabled);
     Spicetify.LocalStorage.set(SHOW_KEY, String(enabled));
     if (enabled) schedule();
-    else { unhideAll(); document.getElementById(ROW_ID)?.remove(); }
+    else { unhideAll(); document.querySelectorAll(".hmx-row").forEach((r) => r.remove()); }
     Spicetify.showNotification(enabled ? "Showing your mixes" : "Spotify's rows restored");
   }).register();
 
   // --- Console helpers ---------------------------------------------------------
   window.homeShelves = () => {
     const rows = shelves()
-      .filter((s) => s.id !== ROW_ID && headingOf(s))
+      .filter((s) => !s.classList.contains("hmx-row") && headingOf(s))
       .map((s) => { const m = mixesIn(s); return { heading: headingOf(s), mixes: m.length, cards: m.links, hidden: s.dataset.homeMixesHidden === "1" }; });
     console.table(rows);
     return rows;
