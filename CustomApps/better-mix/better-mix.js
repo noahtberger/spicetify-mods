@@ -507,6 +507,12 @@
   // background. Spotify refreshes its mixes daily, so a day is the right
   // staleness -- rebuilding more often just burns requests for the same input.
   const CUR_KEY = "home-mixes:current";
+
+  // The off switch. Off means no automatic builds -- startup, daily, or when
+  // Home changes. Manual rebuilds and the pages still work; existing mixes
+  // stay. Separate from home-mixes' toggle, which controls the Home rows.
+  const ENABLED_KEY = "better-mix:enabled";
+  let enabled = (() => { try { return localStorage.getItem(ENABLED_KEY) !== "false"; } catch { return true; } })();
   // Bump when the selection rules change. Mixes built under older rules get
   // rebuilt automatically at the next startup instead of waiting a day.
   const RULES_VERSION = 3;
@@ -549,7 +555,7 @@
   const dailyMixes = () => spotifyMixes().filter((m) => /^daily mix/i.test(m.name)).sort((a, b) => dailyNum(a) - dailyNum(b));
 
   async function autoBuild(reason) {
-    if (building) return;
+    if (!enabled || building) return;
     const store = readVirtual();
     const entry = (m) => store.find((x) => x.sourceUri === m.uri);
     const seen = new Set();
@@ -698,6 +704,19 @@
 
   // No play-bar button: everything is automatic. Settings live on the Better
   // Mix page (sidebar) and the right-click entry below stays for one-offs.
+  // Profile-menu toggle for the automatic builds.
+  if (Spicetify.Menu) {
+    try {
+      new Spicetify.Menu.Item("Build better mixes automatically", enabled, (self) => {
+        enabled = !enabled;
+        self.setState(enabled);
+        try { localStorage.setItem(ENABLED_KEY, String(enabled)); } catch {}
+        Spicetify.showNotification(enabled ? "Automatic mixes on" : "Automatic mixes off — existing mixes stay");
+        if (enabled) autoBuild("switched on");
+      }).register();
+    } catch (e) { console.warn("[better-mix] profile-menu toggle unavailable:", e); }
+  }
+
   // Right-click a playlist -> build from it directly. The playlist you clicked
   // IS the input, so this skips the picker entirely.
   if (Spicetify.ContextMenu) {
