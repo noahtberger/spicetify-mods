@@ -78,7 +78,9 @@
   }
 
   async function playlistTracks(uri) {
+    const t0 = Date.now();
     const c = await P().PlaylistAPI.getContents(uri);
+    logLine(`  read playlist: ${(c?.items || []).length} tracks in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
     return c?.items || [];
   }
 
@@ -91,8 +93,9 @@
     const out = [];
     const seen = new Set();
     let limit = Math.min(extenderMax, Math.max(50, want));
-    for (let call = 0; call < 4 && out.length < want; call++) {
+    for (let call = 0; call < 3 && out.length < want; call++) {
       let batch;
+      const t0 = Date.now();
       try {
         batch = await P().PlaylistAPI.getRecommendedTracks(uri, 0, limit);
       } catch (e) {
@@ -103,7 +106,7 @@
       for (const t of batch || []) {
         if (t?.uri && !seen.has(t.uri)) { seen.add(t.uri); out.push(t); added++; }
       }
-      logLine(`  +${added} candidates (${out.length} total)`);
+      logLine(`  recommender ×${limit}: +${added} new (${out.length} total) in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
       if (added < Math.max(5, (batch?.length || 0) * 0.15)) break;
     }
     return out;
