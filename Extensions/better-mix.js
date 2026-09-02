@@ -19,10 +19,34 @@
 // ============================================================================
 
 (function betterMix() {
-  if (!(Spicetify?.Platform?.PlaylistAPI && Spicetify?.Playbar && Spicetify?.PopupModal)) {
+  // A stub from the very first tick, so anything that calls BetterMix before
+  // initialisation finishes gets "still starting" instead of "isn't loaded".
+  // Replaced with the real object at the bottom once everything's ready.
+  window.BetterMix ||= {
+    ready: false,
+    open: () => Spicetify?.showNotification?.("Better Mix is still starting — try again in a moment"),
+  };
+
+  const startedAt = (window.__betterMixStart ??= Date.now());
+  const gate = {
+    PlaylistAPI: !!Spicetify?.Platform?.PlaylistAPI,
+    PlayerAPI:   !!Spicetify?.Platform?.PlayerAPI,
+    Playbar:     !!Spicetify?.Playbar,
+    PopupModal:  !!Spicetify?.PopupModal,
+    ContextMenu: !!Spicetify?.ContextMenu,
+  };
+  if (!Object.values(gate).every(Boolean)) {
+    const waited = Date.now() - startedAt;
+    if (waited < 400) console.log("[better-mix] loaded, waiting for Spicetify…");
+    else if (waited > 8000 && Date.now() - (window.__betterMixWarn || 0) > 8000) {
+      window.__betterMixWarn = Date.now();
+      console.warn(`[better-mix] still waiting after ${Math.round(waited / 1000)}s — missing: ` +
+        Object.keys(gate).filter((k) => !gate[k]).join(", "));
+    }
     setTimeout(betterMix, 300);
     return;
   }
+  console.log(`[better-mix] initialised after ${Date.now() - startedAt}ms`);
 
   const P = () => Spicetify.Platform;
   let logLine = () => {};
@@ -133,6 +157,39 @@
     logLine(`filtered: -${cutTrack} already played, -${cutArtist} your artists, -${cutCap} artist cap`);
     logLine(`${fresh.length} genuinely new tracks left`);
     if (!fresh.length) throw new Error("Nothing survived the filter — try a different playlist.");
+
+    // If the strict pass can't fill the mix, loosen in stages rather than
+    // hand back a short playlist. Each stage is a little less "new" than the
+    // one before, so it's logged: you should know when the tail of a mix was
+    // filled by artists you already play. Top up to the full size -- the
+    // slice below trims whatever the familiar tracks don't need.
+    if (fresh.length < total) {
+      const strict = fresh.length;
+      const have = new Set(fresh.map((t) => t.uri));
+      const pool = candidates.filter((t) => t?.uri && !have.has(t.uri) && !known.tracks.has(t.uri));
+      let capUp = 0, knownUp = 0;
+
+      // stage 1: more songs from the new artists we already found
+      for (const t of pool) {
+        if (fresh.length >= total) break;
+        if ((t.artists || []).some((a) => known.artists.has(a.uri || a.id))) continue;
+        const key = t.artists?.[0]?.uri ?? "?";
+        if ((perArtist.get(key) || 0) >= maxPerArtist + 2) continue;
+        perArtist.set(key, (perArtist.get(key) || 0) + 1);
+        have.add(t.uri); fresh.push(t); capUp++;
+      }
+      // stage 2: songs you haven't played, by artists you do play
+      for (const t of pool) {
+        if (fresh.length >= total) break;
+        if (have.has(t.uri)) continue;
+        have.add(t.uri); fresh.push(t); knownUp++;
+      }
+
+      if (capUp || knownUp)
+        logLine(`strict pass gave ${strict} — topped up: +${capUp} more from the new artists, +${knownUp} unheard songs by artists you know`);
+      if (fresh.length < total)
+        logLine(`still short at ${fresh.length}: the recommender only offered ${candidates.length} candidates for this one`);
+    }
 
     // A few tracks you know, spread through rather than front-loaded.
     const source = await playlistTracks(sourceUri).catch(() => []);
@@ -382,7 +439,7 @@
   ).register();
 
   // Shared surface for home-mixes.js (and for poking at from the console).
-  window.BetterMix = { open: () => openMenu(), rebuildAll, saveVirtual, play, virtual: readVirtual };
+  window.BetterMix = { ready: true, open: () => openMenu(), rebuildAll, saveVirtual, play, virtual: readVirtual };
 
   console.log(`[better-mix] loaded — ${readVirtual().length} mixes in store`);
 })();
