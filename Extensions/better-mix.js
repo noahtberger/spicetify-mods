@@ -128,19 +128,34 @@
   }
 
   // --- Writing the playlist --------------------------------------------------
-  async function createPlaylist(name, tracks) {
-    const made = await P().RootlistAPI.createPlaylist(name, {});
-    // createPlaylist has returned a bare URI string in testing, but normalise
-    // in case it hands back an object instead.
-    const uri = typeof made === "string" ? made : made?.uri;
-    if (!uri) throw new Error("createPlaylist returned nothing usable: " + JSON.stringify(made));
+  // Reuse one playlist per source rather than creating a new one every run.
+  // Otherwise ten runs leaves ten near-identical playlists in your library --
+  // and anything linking to the mix (the Home row) points at a stale one.
+  async function saveMix(name, tracks) {
+    const existing = (await myPlaylists()).find((p) => p.name === name);
+    let uri = existing?.uri;
+
+    if (uri) {
+      logLine("refreshing the existing playlist…");
+      const old = await playlistTracks(uri);
+      if (old.length) {
+        // remove() wants positions, not URIs -- clear from the end so earlier
+        // indices stay valid as we go.
+        await P().PlaylistAPI.remove(uri, old.map((t, i) => ({ uri: t.uri, uid: t.uid, index: i })).reverse());
+      }
+    } else {
+      logLine("creating the playlist…");
+      const made = await P().RootlistAPI.createPlaylist(name, {});
+      uri = typeof made === "string" ? made : made?.uri;
+      if (!uri) throw new Error("createPlaylist returned nothing usable: " + JSON.stringify(made));
+    }
 
     await P().PlaylistAPI.add(uri, tracks.map((t) => t.uri), {});
     return uri;
   }
 
   // --- UI --------------------------------------------------------------------
-  async function openMenu() {
+  async function openMenu(preselect) {
     const wrap = document.createElement("div");
     wrap.innerHTML = `<pre class="bmx-log" id="bmx-log">loading your playlists…</pre>`;
     Spicetify.PopupModal.display({ title: "Better Mix", content: wrap, isLarge: true });
@@ -153,7 +168,7 @@
       <div class="bmx-row">
         <label style="flex:1 1 260px">Base it on
           <select class="bmx-in" id="bmx-src">
-            ${lists.map((p) => `<option value="${p.uri}">${(p.name || p.uri).replace(/</g, "&lt;")}</option>`).join("")}
+            ${lists.map((p) => `<option value="${p.uri}"${p.uri === preselect ? " selected" : ""}>${(p.name || p.uri).replace(/</g, "&lt;")}</option>`).join("")}
           </select>
         </label>
         <label>Size <input class="bmx-in" id="bmx-total" type="number" min="5" max="100" value="25"></label>
@@ -187,7 +202,7 @@
         if (create) {
           const name = "Better Mix — " + (lists.find((p) => p.uri === val("#bmx-src"))?.name || "mix");
           logLine("\ncreating playlist…");
-          await createPlaylist(name, tracks);
+          await saveMix(name, tracks);
           logLine("done — check your library");
           Spicetify.showNotification("Better Mix created");
         }
@@ -230,6 +245,15 @@
   const ICON = `<svg height="16" width="16" viewBox="0 0 16 16" fill="currentColor">${Spicetify.SVGIcons.enhance}</svg>`;
   new Spicetify.Playbar.Button("Better Mix", ICON, openMenu)
     .element.classList.add("bmx-playbar-btn");
+
+  // Right-click a playlist -> build from it directly. The playlist you clicked
+  // IS the input, so this skips the picker entirely.
+  new Spicetify.ContextMenu.Item(
+    "Better Mix from this",
+    (uris) => openMenu(uris?.[0]),
+    (uris) => uris?.length === 1 && String(uris[0]).includes(":playlist:"),
+    "enhance"
+  ).register();
 
   console.log("[better-mix] loaded");
 })();
