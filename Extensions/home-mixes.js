@@ -307,6 +307,7 @@
     return false;
   }
 
+  const OTHER_ROW_CAP = 16;   // cards in the "Your mixes" row; the rest are behind Show all
   const isDaily = (name) => /^daily mix/i.test(String(name).replace(/^better\s+/i, ""));
 
   function buildRow(id, title, items) {
@@ -346,7 +347,17 @@
     const dailyShelf = current.find((c) => isDaily(c.name))?.shelf || "";
     const groups = [
       { id: ROW_ID + "-daily", title: "Your daily mixes", items: dailySources.map((c) => entryFor({ ...c, shelf: dailyShelf })) },
-      { id: ROW_ID + "-other", title: "Your mixes",       items: current.filter((c) => !isDaily(c.name)).map(entryFor) },
+      // Featured first (what Spotify's shelf shows right now), then the rest of
+      // what's built, newest first. Spotify features only 4-5 at a time and a
+      // row that thin wastes the other ten good ones; Show all has everything.
+      { id: ROW_ID + "-other", title: "Your mixes", items: (() => {
+          const featured = current.filter((c) => !isDaily(c.name)).map(entryFor);
+          const shown = new Set(current.map((c) => c.uri));
+          const rest = store.filter((m) => !isDaily(m.name) && !shown.has(m.sourceUri))
+            .sort((a, b) => Date.parse(b.builtAt || 0) - Date.parse(a.builtAt || 0))
+            .map((m) => ({ shelf: "", ...m }));
+          return [...featured, ...rest].slice(0, OTHER_ROW_CAP);
+        })() },
     ];
 
     for (const g of groups) {
