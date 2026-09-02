@@ -74,6 +74,7 @@ means editing the repo edits the live files — no sync step.
 
 ```bash
 git clone <this repo> ~/spicetify-mods
+ln -s ~/spicetify-mods/Extensions/better-mix.js         ~/.config/spicetify/Extensions/better-mix.js
 ln -s ~/spicetify-mods/Extensions/sleep-timer.js        ~/.config/spicetify/Extensions/sleep-timer.js
 ln -s ~/spicetify-mods/Extensions/hide-announcements.js ~/.config/spicetify/Extensions/hide-announcements.js
 ```
@@ -85,6 +86,7 @@ Developer Mode is on.
 
 ```powershell
 git clone <this repo> $HOME\spicetify-mods
+New-Item -ItemType SymbolicLink -Path "$env:APPDATA\spicetify\Extensions\better-mix.js"         -Target "$HOME\spicetify-mods\Extensions\better-mix.js"
 New-Item -ItemType SymbolicLink -Path "$env:APPDATA\spicetify\Extensions\sleep-timer.js"        -Target "$HOME\spicetify-mods\Extensions\sleep-timer.js"
 New-Item -ItemType SymbolicLink -Path "$env:APPDATA\spicetify\Extensions\hide-announcements.js" -Target "$HOME\spicetify-mods\Extensions\hide-announcements.js"
 ```
@@ -92,7 +94,7 @@ New-Item -ItemType SymbolicLink -Path "$env:APPDATA\spicetify\Extensions\hide-an
 ### Then, either machine
 
 ```bash
-spicetify config extensions "sleep-timer.js|hide-announcements.js"
+spicetify config extensions "better-mix.js|sleep-timer.js|hide-announcements.js"
 spicetify apply
 ```
 
